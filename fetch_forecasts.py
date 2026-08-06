@@ -16,12 +16,14 @@ from datetime import datetime, timezone
 
 import config
 import db
-from collectors import metno, open_meteo, openweathermap, weatherapi
+from collectors import metno, open_meteo, openweathermap, weatherapi, weatherkit
 
 KEYED_SOURCES = [
     ("openweathermap", openweathermap.fetch, "OPENWEATHERMAP_API_KEY"),
     ("weatherapi", weatherapi.fetch, "WEATHERAPI_API_KEY"),
 ]
+
+WEATHERKIT_ENV_VARS = ("APPLE_TEAM_ID", "APPLE_SERVICE_ID", "APPLE_KEY_ID", "APPLE_WEATHERKIT_PRIVATE_KEY")
 
 
 def main() -> None:
@@ -32,6 +34,12 @@ def main() -> None:
     for source_name, _, env_var in KEYED_SOURCES:
         if not api_keys[env_var]:
             print(f"[skip] {env_var} not set - skipping {source_name} for all cities")
+
+    weatherkit_creds = {var: os.environ.get(var) for var in WEATHERKIT_ENV_VARS}
+    weatherkit_ready = all(weatherkit_creds.values())
+    if not weatherkit_ready:
+        missing = [v for v in WEATHERKIT_ENV_VARS if not weatherkit_creds[v]]
+        print(f"[skip] weatherkit missing env vars {missing} - skipping for all cities")
 
     for city_id, city in config.CITIES.items():
         print(f"=== {city_id} ===")
@@ -64,6 +72,21 @@ def main() -> None:
                 print(f"{source_name}: {len(points)} points")
             except Exception as e:
                 print(f"[error] {source_name} fetch failed for {city_id}: {e}")
+
+        if weatherkit_ready:
+            try:
+                points = weatherkit.fetch(
+                    city["lat"], city["lon"],
+                    weatherkit_creds["APPLE_TEAM_ID"],
+                    weatherkit_creds["APPLE_SERVICE_ID"],
+                    weatherkit_creds["APPLE_KEY_ID"],
+                    weatherkit_creds["APPLE_WEATHERKIT_PRIVATE_KEY"],
+                )
+                run_id = db.insert_forecast_run(conn, city_id, "weatherkit", fetched_at)
+                db.insert_forecast_points(conn, run_id, points)
+                print(f"weatherkit: {len(points)} points")
+            except Exception as e:
+                print(f"[error] weatherkit fetch failed for {city_id}: {e}")
 
     conn.commit()
     conn.close()
