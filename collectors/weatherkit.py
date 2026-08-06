@@ -9,11 +9,13 @@ anything paraphrased here.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import requests
 
 URL = "https://weatherkit.apple.com/api/v1/weather/en/{lat}/{lon}"
+FORECAST_DAYS = 10
 
 
 def _make_token(team_id: str, service_id: str, key_id: str, private_key_pem: str) -> str:
@@ -33,10 +35,17 @@ def fetch(
 ) -> list[tuple[str, str, int, float]]:
     """Returns [(valid_time, variable, period_hours, value), ...]."""
     token = _make_token(team_id, service_id, key_id, private_key_pem)
+    now = datetime.now(timezone.utc)
+    hourly_end = (now + timedelta(days=FORECAST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     resp = requests.get(
         URL.format(lat=lat, lon=lon),
         headers={"Authorization": f"Bearer {token}"},
-        params={"dataSets": "forecastHourly", "timezone": "UTC"},
+        params={
+            "dataSets": "forecastHourly",
+            "timezone": "UTC",
+            "hourlyStart": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "hourlyEnd": hourly_end,
+        },
         timeout=30,
     )
     resp.raise_for_status()
