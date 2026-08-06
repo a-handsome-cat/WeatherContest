@@ -3,29 +3,99 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arkhangelsk — рейтинг источников погоды</title>
+<title>Точность прогноза погоды — Архангельск</title>
 <style>
 :root { color-scheme: light dark; }
-body { font-family: -apple-system, system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.2rem; margin-top: 2.5rem; border-bottom: 1px solid currentColor; padding-bottom: .3rem; }
-nav a { margin-right: 1rem; }
-table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; font-size: .9rem; }
-th, td { border: 1px solid rgba(128,128,128,.35); padding: .4rem .6rem; text-align: center; }
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+h1 { font-size: 1.6rem; margin-bottom: .2rem; }
+.subtitle { opacity: .75; margin-top: 0; }
+h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid currentColor; padding-bottom: .3rem; }
+p, li { font-size: .95rem; }
+nav { margin-bottom: 1.5rem; }
+nav a { margin-right: 1.2rem; text-decoration: none; opacity: .65; border-bottom: 2px solid transparent; padding-bottom: .2rem; }
+nav a.active { opacity: 1; font-weight: 600; border-bottom-color: currentColor; }
+
+.guide { background: rgba(128,128,128,.08); border: 1px solid rgba(128,128,128,.2); border-radius: 10px; padding: .5rem 1.5rem 1.5rem; margin: 1.5rem 0; }
+.guide h2 { border-bottom: none; margin-top: 1.5rem; font-size: 1.05rem; }
+.guide h2:first-child { margin-top: 1rem; }
+
+.table-wrap { overflow-x: auto; margin: 1rem 0 2rem; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid rgba(128,128,128,.35); padding: .4rem .6rem; text-align: center; white-space: nowrap; }
 th { text-align: left; }
-td:first-child, th:first-child { text-align: left; white-space: nowrap; }
-.tag { font-size: .75rem; opacity: .75; display: block; }
+td:first-child, th:first-child { text-align: left; }
+tr:nth-child(even) td { background: rgba(128,128,128,.05); }
+
+.tag { font-size: .72rem; opacity: .7; display: block; font-weight: normal; white-space: normal; }
 .confident { font-weight: 600; }
 .preliminary { opacity: .75; }
-.insufficient { opacity: .4; font-style: italic; }
+.insufficient { opacity: .45; font-style: italic; }
 .meta { opacity: .7; font-size: .85rem; }
 .empty { opacity: .6; font-style: italic; }
+
+.glossary { padding-left: 1.2rem; }
+.glossary li { margin-bottom: .3rem; }
 </style>
 </head>
 <body>
-<nav><a href="index.html">Сводно</a><a href="city_novi_sad.html">Novi Sad</a><a href="city_arkhangelsk.html">Arkhangelsk</a></nav>
-<h1>Arkhangelsk — рейтинг источников погоды</h1>
-<p class="meta">Skill-score &gt; 0 значит модель точнее наивного прогноза "как сейчас есть, так и будет". Полупрозрачные значения — предварительные (мало пар), совсем блёклые — данных пока недостаточно для выводов. Обновлено: 2026-08-06 11:44 UTC.</p>
-<p class="empty">Пока нет ни одной пары прогноз/факт — рейтинг появится, как только накопятся первые сутки данных.</p>
+<nav><a href="index.html">Сводно</a><a href="city_novi_sad.html">Нови-Сад</a><a href="city_arkhangelsk.html" class="active">Архангельск</a></nav>
+<h1>Точность прогноза погоды — Архангельск</h1>
+<p class="subtitle">Сравнение источников прогноза погоды в городе Архангельск с фактическими данными метеостанции.</p>
+
+<div class="guide">
+<h2>Что это за страница</h2>
+<p>Идея простая: погодные приложения на телефоне не всегда правы — иногда пишут «облачно», когда за окном уже дождь. Здесь мы автоматически сравниваем прогнозы от полутора десятков разных источников погоды с тем, что реально происходило по данным официальных метеостанций, и считаем, кто предсказывает точнее — отдельно в Нови-Саде и в Архангельске.</p>
+
+<h2>Как это устроено</h2>
+<ol>
+<li>Несколько раз в день мы забираем свежий прогноз от каждого источника на несколько дней вперёд.</li>
+<li>Проходит время. Когда наступает момент, на который был сделан прогноз, мы сверяем предсказанное значение с тем, что реально зафиксировала метеостанция.</li>
+<li>Чем больше таких пар «прогноз/факт» накапливается — тем увереннее можно судить, кто точнее.</li>
+</ol>
+
+<h2>Как читать таблицы</h2>
+<p><strong>Строки</strong> — источники прогноза: от «сырых» метеомоделей (ECMWF, GFS, ICON и так далее) до готовых сервисов (OpenWeatherMap, Apple Погода и другие). Список и краткое описание каждого — в конце страницы.</p>
+<p><strong>Столбцы</strong> — на сколько часов или дней вперёд был сделан прогноз (это называется <em>заблаговременностью</em>, lead time). Прогноз «через 2 часа» и прогноз «через 8 дней» — принципиально разные по сложности задачи, поэтому они не смешиваются в одну цифру.</p>
+
+<h2>Что такое skill-score</h2>
+<p>Нас интересует не просто «насколько модель ошиблась», а «насколько она лучше, чем вообще ничего не предсказывать». Поэтому для сравнения берётся наивный прогноз без всякой метеорологии — «какая погода сейчас, такая и останется» (называется прогноз-<em>персистентность</em>).</p>
+<p>Дальше по шагам:</p>
+<ol>
+<li>Считаем ошибку модели — насколько предсказанное значение отличалось от того, что случилось на самом деле.</li>
+<li>Считаем ошибку наивного прогноза «как сейчас» за тот же момент времени.</li>
+<li>Skill-score = 1 − (ошибка модели)² ⁄ (ошибка наивного прогноза)²</li>
+</ol>
+<p>Как читать результат:</p>
+<ul>
+<li><strong>+1.0</strong> — модель предсказала идеально, без ошибки.</li>
+<li><strong>0</strong> — модель ничем не лучше, чем просто сказать «будет как сейчас». Прогноз не приносит реальной пользы.</li>
+<li><strong>меньше 0</strong> — модель хуже, чем вообще не гадать, а взять текущую погоду. Плохой знак для этого источника на этом горизонте.</li>
+</ul>
+<p>Чем выше число — тем лучше, но интереснее не абсолютное значение, а разница между источниками на одном и том же горизонте.</p>
+
+<h2>Осадки считаются иначе (CSI / POD / FAR)</h2>
+<p>Для дождя и снега skill-score не годится: осадки бывают не каждый день, и источник, который всегда отвечает «осадков не будет», по средней ошибке в миллиметрах будет выглядеть отлично, хотя толку от него ноль. Поэтому для осадков считается по-другому — как в задаче «предсказал / не предсказал»:</p>
+<ul>
+<li><strong>POD</strong> (Probability Of Detection) — из всех случаев, когда дождь реально был, в какой доле источник его предсказал.</li>
+<li><strong>FAR</strong> (False Alarm Ratio) — из всех случаев, когда источник предсказывал дождь, в какой доле дождя на самом деле не случилось.</li>
+<li><strong>CSI</strong> (Critical Success Index) — общий показатель точности по осадкам от 0 до 1, учитывающий сразу и пропуски, и ложные тревоги. 1.0 — идеально, 0 — провал.</li>
+</ul>
+<p>В таблице по умолчанию показан CSI, а POD и FAR можно увидеть, наведя курсор на число.</p>
+
+<h2>Насколько можно доверять цифрам</h2>
+<p>Чем меньше накопилось пар «прогноз-факт» для конкретной ячейки, тем менее надёжен вывод — один нетипичный день может всё перевернуть. Поэтому цифры показаны с разной степенью уверенности, а не просто скрыты, пока данных мало:</p>
+<ul>
+<li><span class="confident">обычным жирным текстом</span> — накопилось достаточно данных (от 25 пар), можно доверять.</li>
+<li><span class="preliminary">приглушённым текстом</span> — данных пока маловато (10–24 пары), это предварительная оценка, картина может ещё измениться.</li>
+<li><span class="insufficient">совсем бледным курсивом</span> — данных почти нет (меньше 10 пар), это скорее шум, чем сигнал.</li>
+</ul>
+<p>Наведите курсор на любое число — во всплывающей подсказке будет видно, сколько именно пар прогноз/факт легло в основу этой оценки.</p>
+
+<h2>Пометки «сильна на ближайшие сутки» / «на дальнем горизонте»</h2>
+<p>Некоторые источники хорошо справляются с прогнозом на завтра, но быстро «теряются» на горизонте в несколько дней — и наоборот. Рядом с названием источника мы отмечаем, в чём он сейчас сильнее: по средней результативности (skill-score по температуре) в ближних интервалах (до 2 дней) против дальних (от 3 дней).</p>
+</div>
+
+<p class="meta">Обновлено: 2026-08-06 12:04 UTC.</p>
+<p class="empty">Пока нет ни одной пары прогноз/факт — таблицы появятся, как только накопятся первые сутки данных.</p>
 </body>
 </html>
