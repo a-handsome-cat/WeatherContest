@@ -1,0 +1,2 @@
+requests>=2.31
+pymetdecoder>=0.1.3

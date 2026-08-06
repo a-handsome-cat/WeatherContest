@@ -1,0 +1,47 @@
+name: Weather collection
+
+# Most of our raw models (IFS/AIFS, GFS, ICON, GEM, UKMO, JMA) run on the standard
+# 00/06/12/18 UTC synoptic cycle. We fetch ~4h after each cycle to catch that run
+# once it's actually published (dissemination lag varies by model/provider, ECMWF's
+# open data tends to be the slowest at a few hours), so 4x/day roughly tracks real
+# model updates instead of polling faster than the data changes. Pure UTC cron also
+# sidesteps DST entirely - no local-time gating needed anymore.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+    - cron: "0 10 * * *"
+    - cron: "0 16 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # the default GITHUB_TOKEN can be read-only depending on repo settings; the commit step needs write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Fetch forecasts
+        run: python3 fetch_forecasts.py
+
+      - name: Fetch observations
+        run: python3 fetch_observations.py
+
+      - name: Rebuild site
+        run: python3 generate_site.py
+
+      - name: Commit updated database and site
+        run: |
+          git config user.name "weathercontest-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/weathercontest.sqlite3 docs/
+          git diff --cached --quiet && echo "no changes" || git commit -m "Collection $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
