@@ -2,13 +2,13 @@
 
 CITIES = {
     "novi_sad": {
-        "display_name": "Novi Sad",
+        "display_name": "Нови-Сад",
         "lat": 45.2671,
         "lon": 19.8335,
         "synop_block": "13274",  # Novi Sad / Rimski Sancevi
     },
     "arkhangelsk": {
-        "display_name": "Arkhangelsk",
+        "display_name": "Архангельск",
         "lat": 64.5401,
         "lon": 40.5433,
         "synop_block": "22550",  # Talagi, ~64.50N 40.73E, right by the city

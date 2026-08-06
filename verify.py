@@ -204,13 +204,14 @@ def classify_specialization(metrics: dict) -> dict[str, str]:
 
     tags: dict[str, str] = {}
     for source in set(short_skill) | set(long_skill):
-        labels = []
-        if source in short_leaders:
-            labels.append("сильна на ближайшие сутки")
-        if source in long_leaders:
-            labels.append("сильна на дальнем горизонте")
-        if labels:
-            tags[source] = " / ".join(labels)
+        is_short = source in short_leaders
+        is_long = source in long_leaders
+        if is_short and is_long:
+            tags[source] = "стабильно сильна на всех горизонтах"
+        elif is_short:
+            tags[source] = "сильна на ближайшие сутки"
+        elif is_long:
+            tags[source] = "сильна на дальнем горизонте"
     return tags
 
 

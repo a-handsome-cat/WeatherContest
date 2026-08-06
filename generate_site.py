@@ -21,22 +21,76 @@ VARIABLE_LABELS = {
 }
 BUCKET_ORDER = [label for _, _, label in verify.LEAD_BUCKETS]
 
-CSS = """
-:root { color-scheme: light dark; }
-body { font-family: -apple-system, system-ui, sans-serif; max-width: 1000px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-h1 { font-size: 1.5rem; }
-h2 { font-size: 1.2rem; margin-top: 2.5rem; border-bottom: 1px solid currentColor; padding-bottom: .3rem; }
-nav a { margin-right: 1rem; }
-table { border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; font-size: .9rem; }
-th, td { border: 1px solid rgba(128,128,128,.35); padding: .4rem .6rem; text-align: center; }
-th { text-align: left; }
-td:first-child, th:first-child { text-align: left; white-space: nowrap; }
-.tag { font-size: .75rem; opacity: .75; display: block; }
-.confident { font-weight: 600; }
-.preliminary { opacity: .75; }
-.insufficient { opacity: .4; font-style: italic; }
-.meta { opacity: .7; font-size: .85rem; }
-.empty { opacity: .6; font-style: italic; }
+# (короткое дружелюбное имя, что это такое) - для показа вместо внутренних id вроде "open-meteo:ecmwf_ifs025"
+SOURCE_LABELS: dict[str, tuple[str, str]] = {
+    "open-meteo:ecmwf_ifs025": ("ECMWF IFS", "Эталонная глобальная модель Европейского центра среднесрочных прогнозов — считается одной из самых точных в мире."),
+    "open-meteo:ecmwf_aifs025_single": ("ECMWF AIFS", "ИИ-модель того же ECMWF: прогноз считает нейросеть, а не физическая симуляция атмосферы."),
+    "open-meteo:gfs_seamless": ("GFS (США)", "Основная глобальная модель американской метеослужбы NOAA."),
+    "open-meteo:icon_seamless": ("ICON (Германия)", "Модель немецкой метеослужбы DWD, особенно сильна в Европе."),
+    "open-meteo:gem_seamless": ("GEM (Канада)", "Глобальная модель канадской метеослужбы."),
+    "open-meteo:ukmo_seamless": ("UKMO (Британия)", "Модель британской метеослужбы Met Office."),
+    "open-meteo:meteofrance_seamless": ("ARPEGE (Франция)", "Глобальная модель французской Météo-France."),
+    "open-meteo:jma_seamless": ("JMA (Япония)", "Глобальная модель японской метеослужбы."),
+    "metno": ("Yr (Норвегия)", "Норвежская метеослужба: собственная обработка прогноза поверх нескольких моделей, хорошая репутация в Европе."),
+    "openweathermap": ("OpenWeatherMap", "Популярный погодный сервис — то, что часто стоит внутри сторонних приложений."),
+    "weatherapi": ("WeatherAPI.com", "Ещё один готовый погодный сервис для приложений."),
+    "tomorrow_io": ("Tomorrow.io", "Использует свою сеть радаров и датчиков, а не только публичные метеомодели."),
+    "weatherkit": ("Apple Погода", "То самое приложение «Погода» на iPhone — источник самой идеи этого проекта."),
+}
+
+GUIDE_HTML = """
+<div class="guide">
+<h2>Что это за страница</h2>
+<p>Идея простая: погодные приложения на телефоне не всегда правы — иногда пишут «облачно», когда за окном уже дождь. Здесь мы автоматически сравниваем прогнозы от полутора десятков разных источников погоды с тем, что реально происходило по данным официальных метеостанций, и считаем, кто предсказывает точнее — отдельно в Нови-Саде и в Архангельске.</p>
+
+<h2>Как это устроено</h2>
+<ol>
+<li>Несколько раз в день мы забираем свежий прогноз от каждого источника на несколько дней вперёд.</li>
+<li>Проходит время. Когда наступает момент, на который был сделан прогноз, мы сверяем предсказанное значение с тем, что реально зафиксировала метеостанция.</li>
+<li>Чем больше таких пар «прогноз/факт» накапливается — тем увереннее можно судить, кто точнее.</li>
+</ol>
+
+<h2>Как читать таблицы</h2>
+<p><strong>Строки</strong> — источники прогноза: от «сырых» метеомоделей (ECMWF, GFS, ICON и так далее) до готовых сервисов (OpenWeatherMap, Apple Погода и другие). Список и краткое описание каждого — в конце страницы.</p>
+<p><strong>Столбцы</strong> — на сколько часов или дней вперёд был сделан прогноз (это называется <em>заблаговременностью</em>, lead time). Прогноз «через 2 часа» и прогноз «через 8 дней» — принципиально разные по сложности задачи, поэтому они не смешиваются в одну цифру.</p>
+
+<h2>Что такое skill-score</h2>
+<p>Нас интересует не просто «насколько модель ошиблась», а «насколько она лучше, чем вообще ничего не предсказывать». Поэтому для сравнения берётся наивный прогноз без всякой метеорологии — «какая погода сейчас, такая и останется» (называется прогноз-<em>персистентность</em>).</p>
+<p>Дальше по шагам:</p>
+<ol>
+<li>Считаем ошибку модели — насколько предсказанное значение отличалось от того, что случилось на самом деле.</li>
+<li>Считаем ошибку наивного прогноза «как сейчас» за тот же момент времени.</li>
+<li>Skill-score = 1 − (ошибка модели)² ⁄ (ошибка наивного прогноза)²</li>
+</ol>
+<p>Как читать результат:</p>
+<ul>
+<li><strong>+1.0</strong> — модель предсказала идеально, без ошибки.</li>
+<li><strong>0</strong> — модель ничем не лучше, чем просто сказать «будет как сейчас». Прогноз не приносит реальной пользы.</li>
+<li><strong>меньше 0</strong> — модель хуже, чем вообще не гадать, а взять текущую погоду. Плохой знак для этого источника на этом горизонте.</li>
+</ul>
+<p>Чем выше число — тем лучше, но интереснее не абсолютное значение, а разница между источниками на одном и том же горизонте.</p>
+
+<h2>Осадки считаются иначе (CSI / POD / FAR)</h2>
+<p>Для дождя и снега skill-score не годится: осадки бывают не каждый день, и источник, который всегда отвечает «осадков не будет», по средней ошибке в миллиметрах будет выглядеть отлично, хотя толку от него ноль. Поэтому для осадков считается по-другому — как в задаче «предсказал / не предсказал»:</p>
+<ul>
+<li><strong>POD</strong> (Probability Of Detection) — из всех случаев, когда дождь реально был, в какой доле источник его предсказал.</li>
+<li><strong>FAR</strong> (False Alarm Ratio) — из всех случаев, когда источник предсказывал дождь, в какой доле дождя на самом деле не случилось.</li>
+<li><strong>CSI</strong> (Critical Success Index) — общий показатель точности по осадкам от 0 до 1, учитывающий сразу и пропуски, и ложные тревоги. 1.0 — идеально, 0 — провал.</li>
+</ul>
+<p>В таблице по умолчанию показан CSI, а POD и FAR можно увидеть, наведя курсор на число.</p>
+
+<h2>Насколько можно доверять цифрам</h2>
+<p>Чем меньше накопилось пар «прогноз-факт» для конкретной ячейки, тем менее надёжен вывод — один нетипичный день может всё перевернуть. Поэтому цифры показаны с разной степенью уверенности, а не просто скрыты, пока данных мало:</p>
+<ul>
+<li><span class="confident">обычным жирным текстом</span> — накопилось достаточно данных (от 25 пар), можно доверять.</li>
+<li><span class="preliminary">приглушённым текстом</span> — данных пока маловато (10–24 пары), это предварительная оценка, картина может ещё измениться.</li>
+<li><span class="insufficient">совсем бледным курсивом</span> — данных почти нет (меньше 10 пар), это скорее шум, чем сигнал.</li>
+</ul>
+<p>Наведите курсор на любое число — во всплывающей подсказке будет видно, сколько именно пар прогноз/факт легло в основу этой оценки.</p>
+
+<h2>Пометки «сильна на ближайшие сутки» / «на дальнем горизонте»</h2>
+<p>Некоторые источники хорошо справляются с прогнозом на завтра, но быстро «теряются» на горизонте в несколько дней — и наоборот. Рядом с названием источника мы отмечаем, в чём он сейчас сильнее: по средней результативности (skill-score по температуре) в ближних интервалах (до 2 дней) против дальних (от 3 дней).</p>
+</div>
 """
 
 
@@ -60,6 +114,10 @@ def _fmt_precip(m: dict) -> str:
     return f'<span class="{conf}" title="{html.escape(title)}">{csi_txt}</span>'
 
 
+def _source_label(source: str) -> str:
+    return SOURCE_LABELS.get(source, (source, ""))[0]
+
+
 def _variable_table(var_metrics: dict, sources: list[str], specialization: dict[str, str], is_precip: bool) -> str:
     rows = []
     for source in sources:
@@ -69,9 +127,9 @@ def _variable_table(var_metrics: dict, sources: list[str], specialization: dict[
             cells.append(f"<td>{(_fmt_precip if is_precip else _fmt_skill)(m)}</td>" if m else "<td>—</td>")
         tag = specialization.get(source)
         tag_html = f'<span class="tag">{html.escape(tag)}</span>' if tag else ""
-        rows.append(f"<tr><td>{html.escape(source)}{tag_html}</td>{''.join(cells)}</tr>")
+        rows.append(f"<tr><td>{html.escape(_source_label(source))}{tag_html}</td>{''.join(cells)}</tr>")
     header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
-    return f"<table><tr><th>Источник</th>{header}</tr>{''.join(rows)}</table>"
+    return f'<div class="table-wrap"><table><tr><th>Источник</th>{header}</tr>{"".join(rows)}</table></div>'
 
 
 def _all_sources(metrics: dict) -> list[str]:
@@ -82,26 +140,43 @@ def _all_sources(metrics: dict) -> list[str]:
     return sorted(sources)
 
 
+def _glossary_html(sources: list[str]) -> str:
+    items = []
+    for source in sources:
+        name, desc = SOURCE_LABELS.get(source, (source, ""))
+        desc_html = f" — {html.escape(desc)}" if desc else ""
+        items.append(f"<li><strong>{html.escape(name)}</strong>{desc_html}</li>")
+    if not items:
+        return ""
+    return f'<h2>Источники на этой странице</h2><ul class="glossary">{"".join(items)}</ul>'
+
+
 def render_city_page(city_id: str, display_name: str, metrics: dict, generated_at: str) -> str:
     specialization = verify.classify_specialization(metrics)
     sources = _all_sources(metrics)
     body = []
     if not sources:
-        body.append('<p class="empty">Пока нет ни одной пары прогноз/факт — рейтинг появится, как только накопятся первые сутки данных.</p>')
+        body.append('<p class="empty">Пока нет ни одной пары прогноз/факт — таблицы появятся, как только накопятся первые сутки данных.</p>')
     for var, label in VARIABLE_LABELS.items():
         var_metrics = metrics.get(var, {})
         if not var_metrics:
             continue
         body.append(f"<h2>{label}</h2>")
         body.append(_variable_table(var_metrics, sources, specialization, is_precip=(var == "precipitation")))
-    return _page(f"{display_name} — рейтинг источников погоды", body, generated_at, city_id)
+    body.append(_glossary_html(sources))
+    return _page(
+        title=f"Точность прогноза погоды — {display_name}",
+        subtitle=f"Сравнение источников прогноза погоды в городе {display_name} с фактическими данными метеостанции.",
+        body_parts=body,
+        generated_at=generated_at,
+        active="city_" + city_id,
+    )
 
 
 def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str:
     """Averages skill_vs_persistence per source/variable/bucket across cities (city-average,
     not pooled samples - a city with more accumulated data shouldn't outweigh the other)."""
     combined: dict = defaultdict(lambda: defaultdict(dict))
-    counts: dict = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
     for city_id, metrics in all_metrics.items():
         for var, by_bucket in metrics.items():
@@ -111,7 +186,6 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
                 for source, m in by_source.items():
                     if m["confidence"] == "insufficient" or m["skill_vs_persistence"] is None:
                         continue
-                    key = (var, bucket, source)
                     combined.setdefault(var, {}).setdefault(bucket, {}).setdefault(source, {"sum": 0.0, "n_cities": 0, "n_total": 0})
                     entry = combined[var][bucket][source]
                     entry["sum"] += m["skill_vs_persistence"]
@@ -120,6 +194,7 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
 
     body = []
     any_data = False
+    all_sources_seen: set[str] = set()
     for var, label in VARIABLE_LABELS.items():
         if var == "precipitation" or var not in combined:
             continue
@@ -128,6 +203,7 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
         if not sources:
             continue
         any_data = True
+        all_sources_seen.update(sources)
         body.append(f"<h2>{label}</h2>")
         rows = []
         for source in sources:
@@ -141,21 +217,32 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
                 conf = "confident" if entry["n_cities"] == len(config.CITIES) else "preliminary"
                 title = f"среднее по {entry['n_cities']} город(ам), всего пар: {entry['n_total']}"
                 cells.append(f'<td><span class="{conf}" title="{html.escape(title)}">{avg_skill:+.2f}</span></td>')
-            rows.append(f"<tr><td>{html.escape(source)}</td>{''.join(cells)}</tr>")
+            rows.append(f"<tr><td>{html.escape(_source_label(source))}</td>{''.join(cells)}</tr>")
         header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
-        body.append(f"<table><tr><th>Источник</th>{header}</tr>{''.join(rows)}</table>")
+        body.append(f'<div class="table-wrap"><table><tr><th>Источник</th>{header}</tr>{"".join(rows)}</table></div>')
 
     if not any_data:
-        body.append('<p class="empty">Пока недостаточно данных ни по одному городу для сводного рейтинга.</p>')
-    body.append('<p class="meta">Сводная таблица — среднее skill-score (относительно наивного прогноза "как сейчас") по городам, где есть данные. Осадки в сводную таблицу не включены — CSI по городам с разным климатом складывать некорректно, смотрите их отдельно на страницах городов.</p>')
+        body.append('<p class="empty">Пока недостаточно данных ни по одному городу для сводной таблицы.</p>')
+    body.append('<p class="meta">Здесь показано среднее skill-score по обоим городам, где для источника уже есть данные — то есть насколько он в среднем лучше «как сейчас, так и будет», а не рейтинг самих городов. Осадки в сводную таблицу не включены — усреднять CSI по городам с разным климатом некорректно, смотрите их отдельно на страницах городов.</p>')
+    body.append(_glossary_html(sorted(all_sources_seen)))
 
-    return _page("Novi Sad vs Arkhangelsk — сводный рейтинг источников погоды", body, generated_at, None)
+    return _page(
+        title="Рейтинг источников прогноза погоды",
+        subtitle="Сводно по двум городам — Нови-Саду (Сербия) и Архангельску (Россия). Сравниваются источники прогноза, а не сами города.",
+        body_parts=body,
+        generated_at=generated_at,
+        active="index",
+    )
 
 
-def _page(title: str, body_parts: list[str], generated_at: str, active_city: str | None) -> str:
-    nav_links = ['<a href="index.html">Сводно</a>']
+def _page(title: str, subtitle: str, body_parts: list[str], generated_at: str, active: str) -> str:
+    nav_items = [("index", "index.html", "Сводно")]
     for city_id, city in config.CITIES.items():
-        nav_links.append(f'<a href="city_{city_id}.html">{html.escape(city["display_name"])}</a>')
+        nav_items.append((f"city_{city_id}", f"city_{city_id}.html", city["display_name"]))
+    nav_links = []
+    for key, href, label in nav_items:
+        cls = ' class="active"' if key == active else ""
+        nav_links.append(f'<a href="{href}"{cls}>{html.escape(label)}</a>')
     nav = f"<nav>{''.join(nav_links)}</nav>"
     return f"""<!doctype html>
 <html lang="ru">
@@ -168,10 +255,46 @@ def _page(title: str, body_parts: list[str], generated_at: str, active_city: str
 <body>
 {nav}
 <h1>{html.escape(title)}</h1>
-<p class="meta">Skill-score &gt; 0 значит модель точнее наивного прогноза "как сейчас есть, так и будет". Полупрозрачные значения — предварительные (мало пар), совсем блёклые — данных пока недостаточно для выводов. Обновлено: {generated_at} UTC.</p>
+<p class="subtitle">{html.escape(subtitle)}</p>
+{GUIDE_HTML}
+<p class="meta">Обновлено: {generated_at} UTC.</p>
 {''.join(body_parts)}
 </body>
 </html>"""
+
+
+CSS = """
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+h1 { font-size: 1.6rem; margin-bottom: .2rem; }
+.subtitle { opacity: .75; margin-top: 0; }
+h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid currentColor; padding-bottom: .3rem; }
+p, li { font-size: .95rem; }
+nav { margin-bottom: 1.5rem; }
+nav a { margin-right: 1.2rem; text-decoration: none; opacity: .65; border-bottom: 2px solid transparent; padding-bottom: .2rem; }
+nav a.active { opacity: 1; font-weight: 600; border-bottom-color: currentColor; }
+
+.guide { background: rgba(128,128,128,.08); border: 1px solid rgba(128,128,128,.2); border-radius: 10px; padding: .5rem 1.5rem 1.5rem; margin: 1.5rem 0; }
+.guide h2 { border-bottom: none; margin-top: 1.5rem; font-size: 1.05rem; }
+.guide h2:first-child { margin-top: 1rem; }
+
+.table-wrap { overflow-x: auto; margin: 1rem 0 2rem; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { border: 1px solid rgba(128,128,128,.35); padding: .4rem .6rem; text-align: center; white-space: nowrap; }
+th { text-align: left; }
+td:first-child, th:first-child { text-align: left; }
+tr:nth-child(even) td { background: rgba(128,128,128,.05); }
+
+.tag { font-size: .72rem; opacity: .7; display: block; font-weight: normal; white-space: normal; }
+.confident { font-weight: 600; }
+.preliminary { opacity: .75; }
+.insufficient { opacity: .45; font-style: italic; }
+.meta { opacity: .7; font-size: .85rem; }
+.empty { opacity: .6; font-style: italic; }
+
+.glossary { padding-left: 1.2rem; }
+.glossary li { margin-bottom: .3rem; }
+"""
 
 
 def main() -> None:
