@@ -33,6 +33,7 @@ jobs:
         env:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           WEATHERAPI_API_KEY: ${{ secrets.WEATHERAPI_API_KEY }}
+          TOMORROW_IO_API_KEY: ${{ secrets.TOMORROW_IO_API_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}

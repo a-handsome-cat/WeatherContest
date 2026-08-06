@@ -16,11 +16,12 @@ from datetime import datetime, timezone
 
 import config
 import db
-from collectors import metno, open_meteo, openweathermap, weatherapi, weatherkit
+from collectors import metno, open_meteo, openweathermap, tomorrow_io, weatherapi, weatherkit
 
 KEYED_SOURCES = [
     ("openweathermap", openweathermap.fetch, "OPENWEATHERMAP_API_KEY"),
     ("weatherapi", weatherapi.fetch, "WEATHERAPI_API_KEY"),
+    ("tomorrow_io", tomorrow_io.fetch, "TOMORROW_IO_API_KEY"),
 ]
 
 WEATHERKIT_ENV_VARS = ("APPLE_TEAM_ID", "APPLE_SERVICE_ID", "APPLE_KEY_ID", "APPLE_WEATHERKIT_PRIVATE_KEY")
