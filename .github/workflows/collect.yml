@@ -30,6 +30,9 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Fetch forecasts
+        env:
+          OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
+          WEATHERAPI_API_KEY: ${{ secrets.WEATHERAPI_API_KEY }}
         run: python3 fetch_forecasts.py
 
       - name: Fetch observations
