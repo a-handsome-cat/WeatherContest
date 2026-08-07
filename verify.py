@@ -19,7 +19,7 @@ from __future__ import annotations
 import bisect
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import config
 import db
@@ -82,9 +82,13 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
         "SELECT obs_time, variable, period_hours, value FROM observations WHERE city = ?",
         (city,),
     ).fetchall()
+    # exact-match index for non-precipitation variables (all instantaneous, period_hours=1 on both sides)
     obs_index: dict[tuple[str, str, int], float] = {
         (obs_time, variable, period_hours): value for obs_time, variable, period_hours, value in obs_rows
+        if variable != "precipitation"
     }
+    precip_obs = [(obs_time, period_hours, value) for obs_time, variable, period_hours, value in obs_rows if variable == "precipitation"]
+
     persistence_by_var: dict[str, PersistenceIndex] = {}
     for variable in CONTINUOUS_VARS:
         rows = [(t, v) for t, var, ph, v in obs_rows if var == variable and ph == 1]
@@ -98,7 +102,47 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
     ).fetchall()
 
     pairs = []
+
+    # Station precipitation reports are almost always accumulated over 6h/12h, never hourly,
+    # while every forecast source gives clean hourly precip - so instead of requiring an exact
+    # period_hours match (which would essentially never fire), sum each source's hourly values
+    # over the same window the station's reading covers.
+    hourly_precip: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
     for source, fetched_at, valid_time, variable, period_hours, fvalue in fc_rows:
+        if variable == "precipitation" and period_hours == 1:
+            hourly_precip[(source, fetched_at)][valid_time] = fvalue
+
+    for obs_time, period_hours, observed in precip_obs:
+        obs_dt = _parse(obs_time)
+        window_start = obs_dt - timedelta(hours=period_hours)
+        for (source, fetched_at), series in hourly_precip.items():
+            fetched_dt = _parse(fetched_at)
+            lead_hours = (obs_dt - fetched_dt).total_seconds() / 3600
+            if lead_hours < 0:
+                continue
+            bucket = _lead_bucket(lead_hours)
+            if bucket is None:
+                continue
+            total, hours_found = 0.0, 0
+            for h in range(1, period_hours + 1):
+                vt = (window_start + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if vt in series:
+                    total += series[vt]
+                    hours_found += 1
+            if hours_found != period_hours:
+                continue  # incomplete window - skip rather than compare a biased partial sum
+            pairs.append({
+                "source": source,
+                "variable": "precipitation",
+                "bucket": bucket,
+                "forecast": total,
+                "observed": observed,
+                "persistence": None,
+            })
+
+    for source, fetched_at, valid_time, variable, period_hours, fvalue in fc_rows:
+        if variable == "precipitation":
+            continue  # handled above via window aggregation
         key = (valid_time, variable, period_hours)
         if key not in obs_index:
             continue
