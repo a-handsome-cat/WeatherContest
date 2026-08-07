@@ -1,5 +1,5 @@
 """Render a static HTML report from the accumulated metrics: one page per city plus
-a combined overview. No build tooling - plain HTML/CSS, meant to be served straight
+a combined overview. No build tooling - plain HTML/CSS/JS, meant to be served straight
 from a GitHub Pages `docs/` folder.
 """
 from __future__ import annotations
@@ -39,7 +39,8 @@ SOURCE_LABELS: dict[str, tuple[str, str]] = {
 }
 
 GUIDE_HTML = """
-<div class="guide">
+<details class="guide">
+<summary>Как читать эту страницу (нажмите, чтобы развернуть)</summary>
 <h2>Что это за страница</h2>
 <p>Идея простая: погодные приложения на телефоне не всегда правы — иногда пишут «облачно», когда за окном уже дождь. Здесь мы автоматически сравниваем прогнозы от полутора десятков разных источников погоды с тем, что реально происходило по данным официальных метеостанций, и считаем, кто предсказывает точнее — отдельно в Нови-Саде и в Архангельске.</p>
 
@@ -52,7 +53,9 @@ GUIDE_HTML = """
 
 <h2>Как читать таблицы</h2>
 <p><strong>Строки</strong> — источники прогноза: от «сырых» метеомоделей (ECMWF, GFS, ICON и так далее) до готовых сервисов (OpenWeatherMap, Apple Погода и другие). Список и краткое описание каждого — в конце страницы.</p>
-<p><strong>Столбцы</strong> — на сколько часов или дней вперёд был сделан прогноз (это называется <em>заблаговременностью</em>, lead time). Прогноз «через 2 часа» и прогноз «через 8 дней» — принципиально разные по сложности задачи, поэтому они не смешиваются в одну цифру.</p>
+<p><strong>Столбец «Общий»</strong> — среднее значение по всем периодам, где для источника уже есть данные (кроме совсем бледных с недостатком пар). Быстрый способ понять "в среднем лучше/хуже", не листая все колонки.</p>
+<p><strong>Остальные столбцы</strong> — на сколько часов или дней вперёд был сделан прогноз (это называется <em>заблаговременностью</em>, lead time). Прогноз «через 2 часа» и прогноз «через 8 дней» — принципиально разные по сложности задачи, поэтому они не смешиваются в одну цифру.</p>
+<p>Заголовки столбцов кликабельны — нажмите, чтобы отсортировать таблицу по этому столбцу (например, узнать, кто лучше всего справляется именно с горизонтом 3-5 дней). Повторный клик меняет направление сортировки.</p>
 
 <h2>Что такое skill-score</h2>
 <p>Нас интересует не просто «насколько модель ошиблась», а «насколько она лучше, чем вообще ничего не предсказывать». Поэтому для сравнения берётся наивный прогноз без всякой метеорологии — «какая погода сейчас, такая и останется» (называется прогноз-<em>персистентность</em>).</p>
@@ -89,8 +92,51 @@ GUIDE_HTML = """
 <p>Наведите курсор на любое число — во всплывающей подсказке будет видно, сколько именно пар прогноз/факт легло в основу этой оценки.</p>
 
 <h2>Пометки «сильна на ближайшие сутки» / «на дальнем горизонте»</h2>
-<p>Некоторые источники хорошо справляются с прогнозом на завтра, но быстро «теряются» на горизонте в несколько дней — и наоборот. Рядом с названием источника мы отмечаем, в чём он сейчас сильнее: по средней результативности (skill-score по температуре) в ближних интервалах (до 2 дней) против дальних (от 3 дней).</p>
-</div>
+<p>Некоторые источники хорошо справляются с прогнозом на завтра, но быстро «теряются» на горизонте в несколько дней — и наоборот. Рядом с названием источника в таблице температуры мы отмечаем, в чём он сейчас сильнее: по средней результативности (skill-score по температуре) в ближних интервалах (до 2 дней) против дальних (от 3 дней). Эта метка основана только на температуре и не показывается в других таблицах, чтобы не выглядеть так, будто она описывает ветер или облачность.</p>
+</details>
+"""
+
+SORT_JS = r"""
+document.querySelectorAll('table').forEach(function (table) {
+  var headRow = table.tHead.rows[0];
+  Array.from(headRow.cells).forEach(function (th, idx) {
+    th.dataset.label = th.textContent;
+    th.classList.add('sortable');
+    th.addEventListener('click', function () { sortTableByColumn(table, idx); });
+  });
+});
+
+function sortTableByColumn(table, idx) {
+  var headCells = Array.from(table.tHead.rows[0].cells);
+  var th = headCells[idx];
+  var dir = th.dataset.dir === 'desc' ? 'asc' : 'desc';
+  headCells.forEach(function (h) { h.dataset.dir = ''; h.textContent = h.dataset.label; });
+  th.dataset.dir = dir;
+  th.textContent = th.dataset.label + (dir === 'desc' ? ' ▼' : ' ▲');
+
+  var tbody = table.tBodies[0];
+  var rows = Array.from(tbody.rows);
+  rows.sort(function (a, b) {
+    var va = cellValue(a.cells[idx]);
+    var vb = cellValue(b.cells[idx]);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    if (typeof va === 'string') {
+      return dir === 'desc' ? String(vb).localeCompare(String(va), 'ru') : String(va).localeCompare(String(vb), 'ru');
+    }
+    return dir === 'desc' ? vb - va : va - vb;
+  });
+  rows.forEach(function (r) { tbody.appendChild(r); });
+}
+
+function cellValue(cell) {
+  var text = cell.textContent.trim();
+  if (text === '—' || text === '') return null;
+  var m = text.match(/-?\d+\.\d+/);
+  if (m) return parseFloat(m[0]);
+  return text;
+}
 """
 
 
@@ -118,6 +164,30 @@ def _source_label(source: str) -> str:
     return SOURCE_LABELS.get(source, (source, ""))[0]
 
 
+def _overall_value(var_metrics: dict, source: str, is_precip: bool) -> str:
+    """Average of the primary metric (skill-score, or CSI for precipitation) across every
+    bucket where this source has at least preliminary confidence - a quick "on the whole"
+    read without eyeballing every lead-time column."""
+    values: list[float] = []
+    total_n = 0
+    for by_source in var_metrics.values():
+        m = by_source.get(source)
+        if not m or m["confidence"] == "insufficient":
+            continue
+        v = m.get("csi") if is_precip else m.get("skill_vs_persistence")
+        if v is None:
+            continue
+        values.append(v)
+        total_n += m["n"]
+    if not values:
+        return "—"
+    avg = sum(values) / len(values)
+    conf = verify.confidence(total_n)
+    title = f"среднее по {len(values)} период(ам), всего пар: {total_n}"
+    label = f"CSI {avg:.2f}" if is_precip else f"{avg:+.2f}"
+    return f'<span class="{conf}" title="{html.escape(title)}">{label}</span>'
+
+
 def _variable_table(var_metrics: dict, sources: list[str], specialization: dict[str, str], is_precip: bool) -> str:
     rows = []
     for source in sources:
@@ -125,11 +195,12 @@ def _variable_table(var_metrics: dict, sources: list[str], specialization: dict[
         for bucket in BUCKET_ORDER:
             m = var_metrics.get(bucket, {}).get(source)
             cells.append(f"<td>{(_fmt_precip if is_precip else _fmt_skill)(m)}</td>" if m else "<td>—</td>")
+        overall = _overall_value(var_metrics, source, is_precip)
         tag = specialization.get(source)
         tag_html = f'<span class="tag">{html.escape(tag)}</span>' if tag else ""
-        rows.append(f"<tr><td>{html.escape(_source_label(source))}{tag_html}</td>{''.join(cells)}</tr>")
+        rows.append(f"<tr><td>{html.escape(_source_label(source))}{tag_html}</td><td>{overall}</td>{''.join(cells)}</tr>")
     header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
-    return f'<div class="table-wrap"><table><tr><th>Источник</th>{header}</tr>{"".join(rows)}</table></div>'
+    return f'<div class="table-wrap"><table><thead><tr><th>Источник</th><th>Общий</th>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 
 def _all_sources(metrics: dict) -> list[str]:
@@ -211,18 +282,29 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
         rows = []
         for source in sources:
             cells = []
+            per_bucket_avgs = []
+            overall_n = 0
             for bucket in BUCKET_ORDER:
                 entry = var_metrics.get(bucket, {}).get(source)
                 if not entry:
                     cells.append("<td>—</td>")
                     continue
                 avg_skill = entry["sum"] / entry["n_cities"]
+                per_bucket_avgs.append(avg_skill)
+                overall_n += entry["n_total"]
                 conf = "confident" if entry["n_cities"] == len(config.CITIES) else "preliminary"
                 title = f"среднее по {entry['n_cities']} город(ам), всего пар: {entry['n_total']}"
                 cells.append(f'<td><span class="{conf}" title="{html.escape(title)}">{avg_skill:+.2f}</span></td>')
-            rows.append(f"<tr><td>{html.escape(_source_label(source))}</td>{''.join(cells)}</tr>")
+            if per_bucket_avgs:
+                overall_avg = sum(per_bucket_avgs) / len(per_bucket_avgs)
+                overall_conf = verify.confidence(overall_n)
+                overall_title = f"среднее по {len(per_bucket_avgs)} период(ам), всего пар: {overall_n}"
+                overall_html = f'<span class="{overall_conf}" title="{html.escape(overall_title)}">{overall_avg:+.2f}</span>'
+            else:
+                overall_html = "—"
+            rows.append(f"<tr><td>{html.escape(_source_label(source))}</td><td>{overall_html}</td>{''.join(cells)}</tr>")
         header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
-        body.append(f'<div class="table-wrap"><table><tr><th>Источник</th>{header}</tr>{"".join(rows)}</table></div>')
+        body.append(f'<div class="table-wrap"><table><thead><tr><th>Источник</th><th>Общий</th>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
     if not any_data:
         body.append('<p class="empty">Пока недостаточно данных ни по одному городу для сводной таблицы.</p>')
@@ -262,6 +344,7 @@ def _page(title: str, subtitle: str, body_parts: list[str], generated_at: str, a
 {GUIDE_HTML}
 <p class="meta">Обновлено: {generated_at} UTC.</p>
 {''.join(body_parts)}
+<script>{SORT_JS}</script>
 </body>
 </html>"""
 
@@ -277,15 +360,20 @@ nav { margin-bottom: 1.5rem; }
 nav a { margin-right: 1.2rem; text-decoration: none; opacity: .65; border-bottom: 2px solid transparent; padding-bottom: .2rem; }
 nav a.active { opacity: 1; font-weight: 600; border-bottom-color: currentColor; }
 
-.guide { background: rgba(128,128,128,.08); border: 1px solid rgba(128,128,128,.2); border-radius: 10px; padding: .5rem 1.5rem 1.5rem; margin: 1.5rem 0; }
+.guide { background: rgba(128,128,128,.08); border: 1px solid rgba(128,128,128,.2); border-radius: 10px; padding: .3rem 1.5rem 1rem; margin: 1.5rem 0; }
+.guide summary { cursor: pointer; font-weight: 600; font-size: 1.05rem; padding: .8rem 0; }
+.guide[open] summary { padding-bottom: .3rem; }
 .guide h2 { border-bottom: none; margin-top: 1.5rem; font-size: 1.05rem; }
-.guide h2:first-child { margin-top: 1rem; }
+.guide h2:first-of-type { margin-top: 1rem; }
 
 .table-wrap { overflow-x: auto; margin: 1rem 0 2rem; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { border: 1px solid rgba(128,128,128,.35); padding: .4rem .6rem; text-align: center; white-space: nowrap; }
 th { text-align: left; }
 td:first-child, th:first-child { text-align: left; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { background: rgba(128,128,128,.15); }
+td:nth-child(2), th:nth-child(2) { border-right: 2px solid rgba(128,128,128,.4); }
 tr:nth-child(even) td { background: rgba(128,128,128,.05); }
 
 .tag { font-size: .72rem; opacity: .7; display: block; font-weight: normal; white-space: normal; }
