@@ -84,7 +84,11 @@ def parse(raw_text: str) -> list[tuple[str, str, int, float]]:
         if cloud and cloud.get("value") is not None and cloud["value"] <= 8:
             points.append((obs_time_iso, "cloud_cover", 1, float(cloud["value"]) * 12.5))
 
-        precip = decoded.get("precipitation_s1")
+        # precipitation is reported in section 1 (precipitation_s1) or section 3
+        # (precipitation_s3) depending on the station's precipitation_indicator - never
+        # both. Some stations (e.g. Arkhangelsk) report almost exclusively via section 3,
+        # so skipping it here meant those stations never contributed any precipitation data.
+        precip = decoded.get("precipitation_s1") or decoded.get("precipitation_s3")
         if precip and precip.get("amount", {}).get("value") is not None:
             hours = (precip.get("time_before_obs") or {}).get("value") or 1
             points.append((obs_time_iso, "precipitation", int(hours), float(precip["amount"]["value"])))
