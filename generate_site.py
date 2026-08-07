@@ -162,7 +162,10 @@ def render_city_page(city_id: str, display_name: str, metrics: dict, generated_a
         if not var_metrics:
             continue
         body.append(f"<h2>{label}</h2>")
-        body.append(_variable_table(var_metrics, sources, specialization, is_precip=(var == "precipitation")))
+        # specialization is derived from temperature skill only (see verify.classify_specialization) -
+        # showing it next to sources in other tables would misleadingly imply it describes that variable
+        tags_here = specialization if var == "temperature_2m" else {}
+        body.append(_variable_table(var_metrics, sources, tags_here, is_precip=(var == "precipitation")))
     body.append(_glossary_html(sources))
     return _page(
         title=f"Точность прогноза погоды — {display_name}",
