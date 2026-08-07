@@ -16,10 +16,19 @@ on:
 
 permissions:
   contents: write  # the default GITHUB_TOKEN can be read-only depending on repo settings; the commit step needs write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   collect:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,3 +62,15 @@ jobs:
           git add data/weathercontest.sqlite3 docs/
           git diff --cached --quiet && echo "no changes" || git commit -m "Collection $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
+
+      # Deployed here directly (not via a separate push-triggered workflow) because
+      # commits pushed with the default GITHUB_TOKEN don't trigger other workflows -
+      # a docs/-only push from this job would silently never reach pages.yml.
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

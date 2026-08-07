@@ -1,9 +1,13 @@
 name: Deploy Pages
 
+# Manual-only safety valve for redeploying docs/ without rerunning the whole
+# collection. The real automatic deploy now happens inline at the end of
+# collect.yml, because a push trigger here never actually fires: commits
+# pushed with the default GITHUB_TOKEN (which collect.yml uses) don't trigger
+# other workflows - that's a deliberate anti-recursion rule in GitHub Actions,
+# not a bug. A `push` trigger on this file would look correct and just silently
+# never run.
 on:
-  push:
-    branches: [main]
-    paths: ["docs/**"]
   workflow_dispatch: {}
 
 permissions:
