@@ -180,14 +180,27 @@ def _aggregate_continuous(pairs: list[dict]) -> dict:
     rmse = (sum(e * e for e in errors) / n) ** 0.5
 
     skill = None
+    rmse_persistence = None
+    n_persistence = 0
     persistence_pairs = [p for p in pairs if p["persistence"] is not None]
     if len(persistence_pairs) >= MIN_PRELIMINARY_N:
-        mse_model = sum((p["forecast"] - p["observed"]) ** 2 for p in persistence_pairs) / len(persistence_pairs)
-        mse_persist = sum((p["persistence"] - p["observed"]) ** 2 for p in persistence_pairs) / len(persistence_pairs)
+        n_persistence = len(persistence_pairs)
+        mse_model = sum((p["forecast"] - p["observed"]) ** 2 for p in persistence_pairs) / n_persistence
+        mse_persist = sum((p["persistence"] - p["observed"]) ** 2 for p in persistence_pairs) / n_persistence
+        rmse_persistence = mse_persist ** 0.5
         if mse_persist > 0:
             skill = 1 - mse_model / mse_persist
 
-    return {"n": n, "mae": mae, "bias": bias, "rmse": rmse, "skill_vs_persistence": skill, "confidence": confidence(n)}
+    return {
+        "n": n,
+        "mae": mae,
+        "bias": bias,
+        "rmse": rmse,
+        "skill_vs_persistence": skill,
+        "confidence": confidence(n),
+        "rmse_persistence": rmse_persistence,
+        "n_persistence": n_persistence,
+    }
 
 
 def _aggregate_precip(pairs: list[dict]) -> dict:
