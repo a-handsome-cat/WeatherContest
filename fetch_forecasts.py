@@ -45,7 +45,11 @@ def main() -> None:
     for city_id, city in config.CITIES.items():
         print(f"=== {city_id} ===")
 
-        by_model = open_meteo.fetch_multimodel(city["lat"], city["lon"])
+        try:
+            by_model = open_meteo.fetch_multimodel(city["lat"], city["lon"])
+        except Exception as e:
+            print(f"[error] open-meteo fetch failed for {city_id}: {e}")
+            by_model = {}
         for model_id, points in by_model.items():
             if not points:
                 print(f"[warn] open-meteo:{model_id} returned no points")
@@ -89,7 +93,8 @@ def main() -> None:
             except Exception as e:
                 print(f"[error] weatherkit fetch failed for {city_id}: {e}")
 
-    conn.commit()
+        conn.commit()  # per city, so one city's failure can't roll back another city's successful fetches
+
     conn.close()
 
 
