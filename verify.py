@@ -138,6 +138,10 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
                 "forecast": total,
                 "observed": observed,
                 "persistence": None,
+                "fetched_at": fetched_at,
+                "valid_time": obs_time,
+                "lead_hours": round(lead_hours, 1),
+                "period_hours": period_hours,
             })
 
     for source, fetched_at, valid_time, variable, period_hours, fvalue in fc_rows:
@@ -167,8 +171,21 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
             "forecast": fvalue,
             "observed": observed,
             "persistence": persistence_pred,
+            "fetched_at": fetched_at,
+            "valid_time": valid_time,
+            "lead_hours": round(lead_hours, 1),
         })
     return pairs
+
+
+def pairs_by_cell(conn: sqlite3.Connection, city: str) -> dict[tuple[str, str, str], list[dict]]:
+    """Groups _fetch_pairs() output by (variable, bucket, source) - the same key
+    compute_metrics() aggregates over - so callers (the CSV export) can show the exact
+    raw pairs behind any given cell."""
+    grouped: dict[tuple[str, str, str], list[dict]] = defaultdict(list)
+    for p in _fetch_pairs(conn, city):
+        grouped[(p["variable"], p["bucket"], p["source"])].append(p)
+    return grouped
 
 
 def _aggregate_continuous(pairs: list[dict]) -> dict:
