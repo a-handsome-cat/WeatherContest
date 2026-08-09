@@ -162,7 +162,13 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
         observed = obs_index[key]
         persistence_pred = None
         if variable in persistence_by_var:
-            persistence_pred = persistence_by_var[variable].value_before(fetched_dt)
+            # Anchored to (valid_time - 24h), i.e. "same time yesterday", not to fetch time.
+            # A flat "whatever it was when we fetched" baseline is trivially wrong across a
+            # diurnal cycle (comparing a 9:50 reading against a 4am valid time, say) - that
+            # would make every real model look artificially good just for knowing nights are
+            # colder than afternoons. Same-hour-yesterday is the standard, harder-to-beat
+            # baseline used in forecast verification for exactly this reason.
+            persistence_pred = persistence_by_var[variable].value_before(valid_dt - timedelta(hours=24))
 
         pairs.append({
             "source": source,
