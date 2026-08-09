@@ -12,21 +12,16 @@ URL = "https://api.tomorrow.io/v4/weather/forecast"
 
 def fetch(lat: float, lon: float, api_key: str) -> list[tuple[str, str, int, float]]:
     """Returns [(valid_time, variable, period_hours, value), ...]."""
-    fields = "temperature,cloudCover,windSpeed,windDirection,precipitationIntensity"
     resp = requests.get(
         URL,
-        params={"location": f"{lat},{lon}", "apikey": api_key, "units": "metric", "timesteps": "1h", "fields": fields},
+        params={"location": f"{lat},{lon}", "apikey": api_key, "units": "metric", "timesteps": "1h"},
         timeout=30,
     )
     resp.raise_for_status()
     data = resp.json()
 
     points: list[tuple[str, str, int, float]] = []
-    hourly = data.get("timelines", {}).get("hourly", [])
-    if hourly:
-        import sys
-        print(f"[debug] tomorrow_io first entry keys: {sorted(hourly[0].get('values', {}).keys())}", file=sys.stderr)
-    for entry in hourly:
+    for entry in data.get("timelines", {}).get("hourly", []):
         valid_time = entry["time"]  # already ISO8601 UTC, e.g. "2026-08-06T12:00:00Z"
         values = entry.get("values", {})
 
@@ -38,7 +33,13 @@ def fetch(lat: float, lon: float, api_key: str) -> list[tuple[str, str, int, flo
             points.append((valid_time, "wind_speed_10m", 1, float(values["windSpeed"])))
         if "windDirection" in values:
             points.append((valid_time, "wind_direction_10m", 1, float(values["windDirection"])))
-        if "precipitationIntensity" in values:
-            points.append((valid_time, "precipitation", 1, float(values["precipitationIntensity"])))
+
+        # this endpoint has no unified "precipitationIntensity" field (confirmed by inspecting
+        # a live response) - precip is split by type instead, so sum all three. mm/h over a 1h
+        # bucket is numerically the same as mm accumulated that hour, same as elsewhere.
+        rain = values.get("rainIntensity") or 0.0
+        sleet = values.get("sleetIntensity") or 0.0
+        snow = values.get("snowIntensity") or 0.0
+        points.append((valid_time, "precipitation", 1, float(rain + sleet + snow)))
 
     return points
