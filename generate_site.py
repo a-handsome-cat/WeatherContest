@@ -66,7 +66,7 @@ GUIDE_HTML = """
 
 <h2>Как читать таблицы</h2>
 <p><strong>Строки</strong> — источники прогноза: от «сырых» метеомоделей (ECMWF, GFS, ICON и так далее) до готовых сервисов (OpenWeatherMap, Apple Погода и другие). Список и краткое описание каждого — в конце страницы.</p>
-<p><strong>Столбец «Общий»</strong> — среднее значение по всем периодам, где для источника уже есть данные (кроме совсем бледных с недостатком пар). Быстрый способ понять "в среднем лучше/хуже", не листая все колонки.</p>
+<p><strong>Столбец «Общий»</strong> — не среднее уже готовых чисел из остальных колонок, а отдельный расчёт: все пары «прогноз/факт» со всех периодов складываются в один общий пул, и skill-score (или CSI для осадков) считается по нему заново с нуля. Это важно, потому что skill-score и CSI — нелинейные величины (отношения), усреднять их напрямую как обычные числа некорректно, и период с 300 парами не должен весить столько же, сколько период с 10. Объединённый пул решает обе проблемы разом.</p>
 <p><strong>Остальные столбцы</strong> — на сколько часов или дней вперёд был сделан прогноз (это называется <em>заблаговременностью</em>, lead time). Прогноз «через 2 часа» и прогноз «через 8 дней» — принципиально разные по сложности задачи, поэтому они не смешиваются в одну цифру.</p>
 <p>Заголовки столбцов кликабельны — нажмите, чтобы отсортировать таблицу по этому столбцу (например, узнать, кто лучше всего справляется именно с горизонтом 3-5 дней). Повторный клик меняет направление сортировки.</p>
 <p>Числа с пунктирным подчёркиванием кликабельны по-другому — по клику скачивается CSV со всеми исходными парами «прогноз/факт», которые легли в основу именно этого числа, вместе с формулой расчёта. Ничего не скрыто — можно проверить любую цифру на сайте вручную.</p>
@@ -193,40 +193,38 @@ def _source_slug(source: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", source).strip("-")
 
 
-def _overall_stats(var_metrics: dict, source: str, is_precip: bool) -> dict | None:
-    """Raw numbers behind the "Общий" column: which buckets were averaged, and the total
-    pair count - shared by the HTML cell (_overall_value) and the CSV export, so the two
-    can never silently drift apart."""
-    values: list[float] = []
-    total_n = 0
-    buckets_used: list[str] = []
-    for bucket in BUCKET_ORDER:
-        m = var_metrics.get(bucket, {}).get(source)
-        if not m or m["confidence"] == "insufficient":
-            continue
-        v = m.get("csi") if is_precip else m.get("skill_vs_persistence")
-        if v is None:
-            continue
-        values.append(v)
-        total_n += m["n"]
-        buckets_used.append(bucket)
-    if not values:
-        return None
-    return {
-        "avg": sum(values) / len(values),
-        "n_total": total_n,
-        "buckets": buckets_used,
-        "confidence": verify.confidence(total_n),
-    }
+def _compute_pooled_overall(pairs_grouped: dict) -> dict[tuple[str, str], dict]:
+    """The "Общий" column: pools every pair from every lead-time bucket for a given
+    (variable, source) into one list and recomputes the metric from scratch on the pool -
+    NOT an average of the already-computed per-bucket skill/CSI values. Averaging those
+    directly would be wrong twice over: they're nonlinear ratios (averaging ratios isn't the
+    same as recomputing on combined data), and a 10-pair bucket would count exactly as much
+    as a 300-pair one. Pooling raw pairs fixes both at once and needs no bucket-level
+    confidence pre-filtering - a thin bucket just contributes its few pairs to the pool
+    instead of being silently dropped."""
+    pairs_by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    buckets_by_key: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for (variable, bucket, source), plist in pairs_grouped.items():
+        pairs_by_key[(variable, source)].extend(plist)
+        buckets_by_key[(variable, source)].add(bucket)
+
+    result: dict[tuple[str, str], dict] = {}
+    for key, pooled_pairs in pairs_by_key.items():
+        variable, _source = key
+        is_precip = variable == "precipitation"
+        agg = verify.aggregate(pooled_pairs, is_precip)
+        agg["buckets"] = [b for b in BUCKET_ORDER if b in buckets_by_key[key]]
+        result[key] = agg
+    return result
 
 
-def _overall_value(var_metrics: dict, source: str, is_precip: bool) -> str:
-    stats = _overall_stats(var_metrics, source, is_precip)
-    if stats is None:
+def _overall_value(overall_metrics: dict, variable: str, source: str, is_precip: bool) -> str:
+    m = overall_metrics.get((variable, source))
+    if m is None:
         return "—"
-    label = f"CSI {stats['avg']:.2f}" if is_precip else f"{stats['avg']:+.2f}"
-    title = f"среднее по {len(stats['buckets'])} период(ам), всего пар: {stats['n_total']}"
-    return f'<span class="{stats["confidence"]}" title="{html.escape(title)}">{label}</span>'
+    cell = (_fmt_precip if is_precip else _fmt_skill)(m)
+    note = f"Объединённый пул по периодам: {', '.join(m['buckets'])}. "
+    return cell.replace('title="', f'title="{html.escape(note)}', 1)
 
 
 def _csv_rows(pairs: list[dict], is_precip: bool, with_bucket: bool = False) -> str:
@@ -249,7 +247,7 @@ def _csv_rows(pairs: list[dict], is_precip: bool, with_bucket: bool = False) -> 
     return out.getvalue()
 
 
-def _cell_csv_text(pairs: list[dict], m: dict, is_precip: bool, city_name: str, var_label: str, bucket: str, source_label: str) -> str:
+def _cell_csv_text(pairs: list[dict], m: dict, is_precip: bool, city_name: str, var_label: str, bucket: str, source_label: str, with_bucket_col: bool = False) -> str:
     lines = [f"# {city_name} / {var_label} / {bucket} / {source_label}"]
     if is_precip:
         lines.append(f"# n={m['n']}, порог дождя = {verify.PRECIP_THRESHOLD_MM} мм")
@@ -266,21 +264,13 @@ def _cell_csv_text(pairs: list[dict], m: dict, is_precip: bool, city_name: str, 
         else:
             lines.append("# skill-score: недостаточно пар с персистентностью")
         lines.append("# persistence = последнее показание станции на (valid_time − 24ч), т.е. «то же время суток вчера», а не «на момент забора прогноза»")
+    if with_bucket_col:
+        lines.append(f"# «Общий» = объединённый пул пар из периодов: {bucket} - метрика посчитана заново по всему пулу, а не усреднена по периодам")
     lines.append("#")
-    return "\n".join(lines) + "\n" + _csv_rows(pairs, is_precip)
+    return "\n".join(lines) + "\n" + _csv_rows(pairs, is_precip, with_bucket=with_bucket_col)
 
 
-def _overall_csv_text(pairs: list[dict], stats: dict, is_precip: bool, city_name: str, var_label: str, source_label: str) -> str:
-    metric_name = "CSI" if is_precip else "skill"
-    lines = [
-        f"# {city_name} / {var_label} / Общий (среднее по: {', '.join(stats['buckets'])}) / {source_label}",
-        f"# среднее {metric_name} = {stats['avg']:.4f}, всего пар = {stats['n_total']}",
-        "#",
-    ]
-    return "\n".join(lines) + "\n" + _csv_rows(pairs, is_precip, with_bucket=True)
-
-
-def _write_cell_exports(site_dir: Path, city_id: str, city_name: str, metrics: dict, pairs_grouped: dict) -> tuple[dict, dict]:
+def _write_cell_exports(site_dir: Path, city_id: str, city_name: str, metrics: dict, pairs_grouped: dict, overall_metrics: dict) -> tuple[dict, dict]:
     """Writes one CSV per table cell (raw pairs + formula) under docs/data/<city_id>/,
     returns {(variable, bucket, source): relative_url} and {(variable, source): relative_url}
     for _variable_table to link cells to."""
@@ -288,26 +278,22 @@ def _write_cell_exports(site_dir: Path, city_id: str, city_name: str, metrics: d
     data_dir.mkdir(parents=True, exist_ok=True)
     cell_links: dict[tuple[str, str, str], str] = {}
     overall_links: dict[tuple[str, str], str] = {}
-    var_source_seen: set[tuple[str, str]] = set()
 
     for (variable, bucket, source), plist in pairs_grouped.items():
         m = metrics.get(variable, {}).get(bucket, {}).get(source)
         if not m or bucket not in BUCKET_SLUGS:
             continue
-        var_source_seen.add((variable, source))
         is_precip = variable == "precipitation"
         text = _cell_csv_text(plist, m, is_precip, city_name, VARIABLE_LABELS.get(variable, variable), bucket, _source_label(source))
         fname = f"{variable}__{BUCKET_SLUGS[bucket]}__{_source_slug(source)}.csv"
         (data_dir / fname).write_text(text, encoding="utf-8")
         cell_links[(variable, bucket, source)] = f"data/{city_id}/{fname}"
 
-    for variable, source in var_source_seen:
+    for (variable, source), m in overall_metrics.items():
         is_precip = variable == "precipitation"
-        stats = _overall_stats(metrics.get(variable, {}), source, is_precip)
-        if stats is None:
-            continue
-        combined_pairs = [p for bucket in stats["buckets"] for p in pairs_grouped.get((variable, bucket, source), [])]
-        text = _overall_csv_text(combined_pairs, stats, is_precip, city_name, VARIABLE_LABELS.get(variable, variable), _source_label(source))
+        pooled_pairs = [p for bucket in m["buckets"] for p in pairs_grouped.get((variable, bucket, source), [])]
+        bucket_label = ", ".join(m["buckets"])
+        text = _cell_csv_text(pooled_pairs, m, is_precip, city_name, VARIABLE_LABELS.get(variable, variable), bucket_label, _source_label(source), with_bucket_col=True)
         fname = f"{variable}__overall__{_source_slug(source)}.csv"
         (data_dir / fname).write_text(text, encoding="utf-8")
         overall_links[(variable, source)] = f"data/{city_id}/{fname}"
@@ -329,6 +315,7 @@ def _variable_table(
     variable: str,
     cell_links: dict,
     overall_links: dict,
+    overall_metrics: dict,
 ) -> str:
     rows = []
     for source in sources:
@@ -338,7 +325,7 @@ def _variable_table(
             cell_html = (_fmt_precip if is_precip else _fmt_skill)(m) if m else "—"
             cell_html = _linkify(cell_html, cell_links.get((variable, bucket, source)))
             cells.append(f"<td>{cell_html}</td>")
-        overall = _linkify(_overall_value(var_metrics, source, is_precip), overall_links.get((variable, source)))
+        overall = _linkify(_overall_value(overall_metrics, variable, source, is_precip), overall_links.get((variable, source)))
         tag = specialization.get(source)
         tag_html = f'<span class="tag">{html.escape(tag)}</span>' if tag else ""
         rows.append(f"<tr><td>{html.escape(_source_label(source))}{tag_html}</td><td>{overall}</td>{''.join(cells)}</tr>")
@@ -372,6 +359,7 @@ def render_city_page(
     generated_at: str,
     cell_links: dict,
     overall_links: dict,
+    overall_metrics: dict,
 ) -> str:
     specialization = verify.classify_specialization(metrics)
     sources = _all_sources(metrics)
@@ -386,7 +374,7 @@ def render_city_page(
         # specialization is derived from temperature skill only (see verify.classify_specialization) -
         # showing it next to sources in other tables would misleadingly imply it describes that variable
         tags_here = specialization if var == "temperature_2m" else {}
-        body.append(_variable_table(var_metrics, sources, tags_here, is_precip=(var == "precipitation"), variable=var, cell_links=cell_links, overall_links=overall_links))
+        body.append(_variable_table(var_metrics, sources, tags_here, is_precip=(var == "precipitation"), variable=var, cell_links=cell_links, overall_links=overall_links, overall_metrics=overall_metrics))
     body.append(_glossary_html(sources))
     return _page(
         title=f"Точность прогноза погоды — {display_name}",
@@ -460,7 +448,7 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
 
     if not any_data:
         body.append('<p class="empty">Пока недостаточно данных ни по одному городу для сводной таблицы.</p>')
-    body.append('<p class="meta">Здесь показано среднее skill-score по обоим городам, где для источника уже есть данные — то есть насколько он в среднем лучше «как сейчас, так и будет», а не рейтинг самих городов. Осадки в сводную таблицу не включены — усреднять CSI по городам с разным климатом некорректно, смотрите их отдельно на страницах городов. Числа здесь не кликабельны для скачивания — это среднее по средним, а не отдельный расчёт по сырым парам; исходные пары смотрите на страницах городов.</p>')
+    body.append('<p class="meta">Здесь показано среднее skill-score по обоим городам, где для источника уже есть данные — то есть насколько он в среднем лучше «как сейчас, так и будет», а не рейтинг самих городов. Осадки в сводную таблицу не включены — усреднять CSI по городам с разным климатом некорректно, смотрите их отдельно на страницах городов. Числа здесь не кликабельны для скачивания — это среднее по средним (по городам, а внутри — пока ещё и по периодам), а не отдельный расчёт по объединённому пулу пар, как теперь колонка «Общий» на страницах городов. Смешивать сырые пары двух климатически разных городов в один пул — отдельный вопрос, который здесь пока сознательно не решён; исходные пары и честный «Общий» по каждому городу отдельно смотрите на страницах городов.</p>')
     body.append(_glossary_html(sorted(all_sources_seen)))
 
     return _page(
@@ -555,8 +543,9 @@ def main() -> None:
         metrics = verify.compute_metrics(conn, city_id)
         all_metrics[city_id] = metrics
         pairs_grouped = verify.pairs_by_cell(conn, city_id)
-        cell_links, overall_links = _write_cell_exports(site_dir, city_id, city["display_name"], metrics, pairs_grouped)
-        page = render_city_page(city_id, city["display_name"], metrics, generated_at, cell_links, overall_links)
+        overall_metrics = _compute_pooled_overall(pairs_grouped)
+        cell_links, overall_links = _write_cell_exports(site_dir, city_id, city["display_name"], metrics, pairs_grouped, overall_metrics)
+        page = render_city_page(city_id, city["display_name"], metrics, generated_at, cell_links, overall_links, overall_metrics)
         (site_dir / f"city_{city_id}.html").write_text(page, encoding="utf-8")
         print(f"wrote city_{city_id}.html (+{len(cell_links)} cell CSVs, {len(overall_links)} overall CSVs)")
 

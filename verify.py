@@ -243,6 +243,13 @@ def _aggregate_precip(pairs: list[dict]) -> dict:
     return {"n": n, "mae": mae, "bias": bias, "pod": pod, "far": far, "csi": csi, "confidence": confidence(n)}
 
 
+def aggregate(pairs: list[dict], is_precip: bool) -> dict:
+    """Public entry point for computing a metric dict from a raw pair list - used both by
+    compute_metrics() (per bucket) and by the site generator's pooled "Общий" column (pairs
+    from every bucket combined), so both go through the exact same math."""
+    return _aggregate_precip(pairs) if is_precip else _aggregate_continuous(pairs)
+
+
 def compute_metrics(conn: sqlite3.Connection, city: str) -> dict:
     """Returns metrics[variable][bucket][source] = {...}."""
     pairs = _fetch_pairs(conn, city)
