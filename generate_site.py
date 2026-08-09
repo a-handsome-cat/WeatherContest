@@ -202,9 +202,13 @@ def _compute_pooled_overall(pairs_grouped: dict) -> dict[tuple[str, str], dict]:
     as a 300-pair one. Pooling raw pairs fixes both at once and needs no bucket-level
     confidence pre-filtering - a thin bucket just contributes its few pairs to the pool
     instead of being silently dropped."""
+    scored_variables = verify.CONTINUOUS_VARS | {"precipitation"}  # excludes wind_direction_10m - see compute_metrics()
+
     pairs_by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
     buckets_by_key: dict[tuple[str, str], set[str]] = defaultdict(set)
     for (variable, bucket, source), plist in pairs_grouped.items():
+        if variable not in scored_variables:
+            continue
         pairs_by_key[(variable, source)].extend(plist)
         buckets_by_key[(variable, source)].add(bucket)
 
