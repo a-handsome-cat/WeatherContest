@@ -22,7 +22,11 @@ def fetch(lat: float, lon: float, api_key: str) -> list[tuple[str, str, int, flo
     data = resp.json()
 
     points: list[tuple[str, str, int, float]] = []
-    for entry in data.get("timelines", {}).get("hourly", []):
+    hourly = data.get("timelines", {}).get("hourly", [])
+    if hourly:
+        import sys
+        print(f"[debug] tomorrow_io first entry keys: {sorted(hourly[0].get('values', {}).keys())}", file=sys.stderr)
+    for entry in hourly:
         valid_time = entry["time"]  # already ISO8601 UTC, e.g. "2026-08-06T12:00:00Z"
         values = entry.get("values", {})
 
