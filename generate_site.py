@@ -167,7 +167,7 @@ def _fmt_skill(m: dict) -> str:
     skill_txt = f"{skill:+.2f}" if skill is not None else "—"
     rmse_p = m.get("rmse_persistence")
     baseline_label = _BASELINE_LABELS.get(m.get("persistence_kind"), "?")
-    if rmse_p is not None:
+    if rmse_p is not None and skill is not None:
         # spells out exactly how skill-score was derived: 1 - (RMSE / RMSE_персистентности)^2
         title = (
             f"n={m['n']}, MAE={m['mae']:.2f}, RMSE={m['rmse']:.2f}, bias={m['bias']:+.2f}. "
@@ -175,6 +175,8 @@ def _fmt_skill(m: dict) -> str:
             f"где RMSE_персистентности={rmse_p:.2f} по {m['n_persistence']} пар(ам). "
             f"Baseline: {baseline_label} (автоматически выбран более сильный из двух по факту)"
         )
+    elif rmse_p is not None:
+        title = f"n={m['n']}, MAE={m['mae']:.2f}, RMSE={m['rmse']:.2f}, bias={m['bias']:+.2f}. Skill не определён: RMSE_персистентности=0 по {m['n_persistence']} пар(ам) - baseline совпал с фактом точно."
     else:
         title = f"n={m['n']}, MAE={m['mae']:.2f}, RMSE={m['rmse']:.2f}, bias={m['bias']:+.2f}. Недостаточно пар с персистентностью для skill-score."
     return f'<span class="{conf}" title="{html.escape(title)}">{skill_txt}</span>'
@@ -267,11 +269,16 @@ def _cell_csv_text(pairs: list[dict], m: dict, is_precip: bool, city_name: str, 
     else:
         lines.append(f"# n={m['n']}, MAE={m['mae']:.3f}, RMSE={m['rmse']:.3f}, bias={m['bias']:+.3f}")
         rmse_p = m.get("rmse_persistence")
-        if rmse_p is not None:
+        skill = m.get("skill_vs_persistence")
+        if rmse_p is not None and skill is not None:
             lines.append(
                 f"# skill = 1 - (RMSE/RMSE_персистентности)^2 = 1 - ({m['rmse']:.3f}/{rmse_p:.3f})^2 "
-                f"= {m['skill_vs_persistence']:.4f}  (RMSE_персистентности по {m['n_persistence']} пар(ам))"
+                f"= {skill:.4f}  (RMSE_персистентности по {m['n_persistence']} пар(ам))"
             )
+        elif rmse_p is not None:
+            # rmse_p == 0 (persistence matched observed exactly every time in this sample) -
+            # the model/persistence ratio is undefined rather than computed, not "insufficient data"
+            lines.append(f"# skill-score: не определён (RMSE_персистентности=0 по {m['n_persistence']} пар(ам) - baseline совпал с фактом точно)")
         else:
             lines.append("# skill-score: недостаточно пар с персистентностью")
         baseline_label = _BASELINE_LABELS.get(m.get("persistence_kind"), "?")
