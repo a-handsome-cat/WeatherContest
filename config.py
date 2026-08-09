@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Static configuration for the multi-city weather-source comparison project."""
 
 CITIES = {

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Join stored forecasts against observations and compute accuracy metrics per
 source / variable / lead-time bucket, per the methodology agreed with the user:
 
@@ -77,6 +78,61 @@ class PersistenceIndex:
         return self._values[idx]
 
 
+def _choose_persistence_baseline(
+    fc_rows: list[tuple], obs_index: dict, persistence_by_var: dict[str, "PersistenceIndex"]
+) -> dict[tuple[str, str], str]:
+    """Decides, once per (variable, bucket) - not per source - whether "as of fetch time" or
+    "same hour yesterday" is the harder baseline to beat here, using actual RMSE against
+    observations. Must be decided once for everyone, not per source: letting each source pick
+    whichever baseline flatters it most would be cherry-picking, not honest comparison (this
+    is why the (variable, bucket, fetched_at, valid_time) key is deduplicated across sources
+    before comparing - otherwise a variable/bucket with many overlapping sources would bias
+    the vote by sheer repetition). Falls back to 24h-persistence when there isn't enough
+    overlap to compare honestly yet.
+    """
+    seen: set[tuple[str, str, str, str]] = set()
+    samples: dict[tuple[str, str], list[tuple[datetime, datetime, float]]] = defaultdict(list)
+    for source, fetched_at, valid_time, variable, period_hours, _fvalue in fc_rows:
+        if variable not in persistence_by_var:
+            continue
+        key = (valid_time, variable, period_hours)
+        if key not in obs_index:
+            continue
+        fetched_dt = _parse(fetched_at)
+        valid_dt = _parse(valid_time)
+        lead_hours = (valid_dt - fetched_dt).total_seconds() / 3600
+        if lead_hours < 0:
+            continue
+        bucket = _lead_bucket(lead_hours)
+        if bucket is None:
+            continue
+        dedup_key = (variable, bucket, fetched_at, valid_time)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        samples[(variable, bucket)].append((fetched_dt, valid_dt, obs_index[key]))
+
+    choice: dict[tuple[str, str], str] = {}
+    for key, rows in samples.items():
+        variable, _bucket = key
+        idx = persistence_by_var[variable]
+        asof_sq_errors, h24_sq_errors = [], []
+        for fetched_dt, valid_dt, observed in rows:
+            p_asof = idx.value_before(fetched_dt)
+            p_24h = idx.value_before(valid_dt - timedelta(hours=24))
+            if p_asof is not None:
+                asof_sq_errors.append((p_asof - observed) ** 2)
+            if p_24h is not None:
+                h24_sq_errors.append((p_24h - observed) ** 2)
+        if len(asof_sq_errors) < MIN_PRELIMINARY_N or len(h24_sq_errors) < MIN_PRELIMINARY_N:
+            choice[key] = "24h"  # not enough overlap to compare honestly yet - keep the diurnally-aware default
+            continue
+        rmse_asof = (sum(asof_sq_errors) / len(asof_sq_errors)) ** 0.5
+        rmse_24h = (sum(h24_sq_errors) / len(h24_sq_errors)) ** 0.5
+        choice[key] = "asof" if rmse_asof < rmse_24h else "24h"
+    return choice
+
+
 def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
     obs_rows = conn.execute(
         "SELECT obs_time, variable, period_hours, value FROM observations WHERE city = ?",
@@ -100,6 +156,8 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
            WHERE fr.city = ?""",
         (city,),
     ).fetchall()
+
+    baseline_choice = _choose_persistence_baseline(fc_rows, obs_index, persistence_by_var)
 
     pairs = []
 
@@ -161,14 +219,19 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
 
         observed = obs_index[key]
         persistence_pred = None
+        persistence_kind = None
         if variable in persistence_by_var:
-            # Anchored to (valid_time - 24h), i.e. "same time yesterday", not to fetch time.
-            # A flat "whatever it was when we fetched" baseline is trivially wrong across a
-            # diurnal cycle (comparing a 9:50 reading against a 4am valid time, say) - that
-            # would make every real model look artificially good just for knowing nights are
-            # colder than afternoons. Same-hour-yesterday is the standard, harder-to-beat
-            # baseline used in forecast verification for exactly this reason.
-            persistence_pred = persistence_by_var[variable].value_before(valid_dt - timedelta(hours=24))
+            # Which baseline is harder to beat - "as of fetch time" or "same hour yesterday" -
+            # is decided per (variable, bucket) from actual data by _choose_persistence_baseline(),
+            # not assumed. A flat "whatever it was when we fetched" baseline is trivially wrong
+            # across a diurnal cycle in general, but that doesn't automatically make it the
+            # weaker choice at every lead time in every city - so we measure both and use
+            # whichever one is actually tougher here, instead of guessing.
+            persistence_kind = baseline_choice.get((variable, bucket), "24h")
+            if persistence_kind == "asof":
+                persistence_pred = persistence_by_var[variable].value_before(fetched_dt)
+            else:
+                persistence_pred = persistence_by_var[variable].value_before(valid_dt - timedelta(hours=24))
 
         pairs.append({
             "source": source,
@@ -177,6 +240,7 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
             "forecast": fvalue,
             "observed": observed,
             "persistence": persistence_pred,
+            "persistence_kind": persistence_kind,
             "fetched_at": fetched_at,
             "valid_time": valid_time,
             "lead_hours": round(lead_hours, 1),
@@ -214,6 +278,9 @@ def _aggregate_continuous(pairs: list[dict]) -> dict:
         if mse_persist > 0:
             skill = 1 - mse_model / mse_persist
 
+    kinds = {p["persistence_kind"] for p in persistence_pairs if p.get("persistence_kind")}
+    persistence_kind = kinds.pop() if len(kinds) == 1 else ("mixed" if kinds else None)
+
     return {
         "n": n,
         "mae": mae,
@@ -223,6 +290,7 @@ def _aggregate_continuous(pairs: list[dict]) -> dict:
         "confidence": confidence(n),
         "rmse_persistence": rmse_persistence,
         "n_persistence": n_persistence,
+        "persistence_kind": persistence_kind,
     }
 
 
