@@ -12,9 +12,10 @@ URL = "https://api.tomorrow.io/v4/weather/forecast"
 
 def fetch(lat: float, lon: float, api_key: str) -> list[tuple[str, str, int, float]]:
     """Returns [(valid_time, variable, period_hours, value), ...]."""
+    fields = "temperature,cloudCover,windSpeed,windDirection,precipitationIntensity"
     resp = requests.get(
         URL,
-        params={"location": f"{lat},{lon}", "apikey": api_key, "units": "metric", "timesteps": "1h"},
+        params={"location": f"{lat},{lon}", "apikey": api_key, "units": "metric", "timesteps": "1h", "fields": fields},
         timeout=30,
     )
     resp.raise_for_status()

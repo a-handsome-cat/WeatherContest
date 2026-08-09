@@ -161,19 +161,20 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
 
     pairs = []
 
-    # Station precipitation reports are almost always accumulated over 6h/12h, never hourly,
-    # while every forecast source gives clean hourly precip - so instead of requiring an exact
-    # period_hours match (which would essentially never fire), sum each source's hourly values
-    # over the same window the station's reading covers.
-    hourly_precip: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
+    # Station precipitation reports accumulate over 6h/12h windows, while forecast sources give
+    # their own fixed step - 1h for most, but e.g. OpenWeatherMap only ever gives 3h buckets, and
+    # met.no thins from 1h to 6h/12h steps further into the forecast (mixed within one series).
+    # So instead of assuming hourly, sum whichever step size this source actually has for this
+    # run, as long as it evenly tiles the observation's window with no gaps.
+    precip_series: dict[tuple[str, str], dict[str, tuple[int, float]]] = defaultdict(dict)
     for source, fetched_at, valid_time, variable, period_hours, fvalue in fc_rows:
-        if variable == "precipitation" and period_hours == 1:
-            hourly_precip[(source, fetched_at)][valid_time] = fvalue
+        if variable == "precipitation":
+            precip_series[(source, fetched_at)][valid_time] = (period_hours, fvalue)
 
-    for obs_time, period_hours, observed in precip_obs:
+    for obs_time, obs_period_hours, observed in precip_obs:
         obs_dt = _parse(obs_time)
-        window_start = obs_dt - timedelta(hours=period_hours)
-        for (source, fetched_at), series in hourly_precip.items():
+        window_start = obs_dt - timedelta(hours=obs_period_hours)
+        for (source, fetched_at), series in precip_series.items():
             fetched_dt = _parse(fetched_at)
             lead_hours = (obs_dt - fetched_dt).total_seconds() / 3600
             if lead_hours < 0:
@@ -181,14 +182,24 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
             bucket = _lead_bucket(lead_hours)
             if bucket is None:
                 continue
-            total, hours_found = 0.0, 0
-            for h in range(1, period_hours + 1):
-                vt = (window_start + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                if vt in series:
-                    total += series[vt]
-                    hours_found += 1
-            if hours_found != period_hours:
-                continue  # incomplete window - skip rather than compare a biased partial sum
+
+            candidate_periods = sorted({ph for ph, _ in series.values() if obs_period_hours % ph == 0})
+            total, matched = 0.0, False
+            for src_period in candidate_periods:
+                num_blocks = obs_period_hours // src_period
+                block_total, blocks_found = 0.0, 0
+                for i in range(num_blocks):
+                    block_end = window_start + timedelta(hours=src_period * (i + 1))
+                    vt = block_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    entry = series.get(vt)
+                    if entry is not None and entry[0] == src_period:
+                        block_total += entry[1]
+                        blocks_found += 1
+                if blocks_found == num_blocks:
+                    total, matched = block_total, True
+                    break  # prefer the finest step size that fully covers the window
+            if not matched:
+                continue  # no combination of this source's blocks cleanly tiles the window - skip rather than guess
             pairs.append({
                 "source": source,
                 "variable": "precipitation",
@@ -199,7 +210,7 @@ def _fetch_pairs(conn: sqlite3.Connection, city: str) -> list[dict]:
                 "fetched_at": fetched_at,
                 "valid_time": obs_time,
                 "lead_hours": round(lead_hours, 1),
-                "period_hours": period_hours,
+                "period_hours": obs_period_hours,
             })
 
     for source, fetched_at, valid_time, variable, period_hours, fvalue in fc_rows:
