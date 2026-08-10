@@ -1,0 +1,7 @@
+# Архангельск / Осадки / 1-2 дня / Tomorrow.io
+# n=1, порог дождя = 0.2 мм
+# POD=None, FAR=None, CSI=None, MAE=0.110 мм, bias=+0.110 мм
+# CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
+#
+fetched_at,valid_time,lead_hours,forecast,observed,error
+2026-08-09T12:48:15Z,2026-08-10T15:00:00Z,26.2,0.11,0.0,0.11
