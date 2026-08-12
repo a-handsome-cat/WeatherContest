@@ -1,0 +1,7 @@
+# Нови-Сад / Осадки / 0-6ч / OpenWeatherMap
+# n=1, порог дождя = 0.2 мм
+# POD=None, FAR=None, CSI=None, MAE=0.000 мм, bias=+0.000 мм
+# CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
+#
+fetched_at,valid_time,lead_hours,forecast,observed,error
+2026-08-12T06:05:22Z,2026-08-12T12:00:00Z,5.9,0.0,0.0,0.0
