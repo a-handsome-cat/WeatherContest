@@ -1,0 +1,8 @@
+# Нови-Сад / Осадки / 2-3 дня / Tomorrow.io
+# n=2, порог дождя = 0.2 мм
+# POD=None, FAR=None, CSI=None, MAE=0.000 мм, bias=+0.000 мм
+# CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
+#
+fetched_at,valid_time,lead_hours,forecast,observed,error
+2026-08-09T12:48:15Z,2026-08-11T18:00:00Z,53.2,0.0,0.0,0.0
+2026-08-09T16:31:44Z,2026-08-11T18:00:00Z,49.5,0.0,0.0,0.0
