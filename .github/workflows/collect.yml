@@ -38,6 +38,17 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      # data/weathercontest.sqlite3 outgrew GitHub's 100MB per-file git limit (and git
+      # doesn't diff SQLite's binary format well, so every commit bloated the repo
+      # further). It's no longer git-tracked - it lives as the "db-snapshot" release
+      # asset instead, downloaded here and re-uploaded (overwritten) at the end of the run.
+      - name: Download database snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p data
+          gh release download db-snapshot -p '*.sqlite3' -O data/weathercontest.sqlite3 --clobber
+
       - name: Fetch forecasts
         env:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
@@ -55,11 +66,16 @@ jobs:
       - name: Rebuild site
         run: python3 generate_site.py
 
-      - name: Commit updated database and site
+      - name: Upload database snapshot
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload db-snapshot data/weathercontest.sqlite3 --clobber
+
+      - name: Commit updated site
         run: |
           git config user.name "weathercontest-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/weathercontest.sqlite3 docs/
+          git add docs/
           git diff --cached --quiet && echo "no changes" || git commit -m "Collection $(date -u +%Y-%m-%dT%H:%MZ)"
           git push
 

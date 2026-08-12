@@ -4,5 +4,8 @@ __pycache__/
 .env
 .DS_Store
 
-# data/weathercontest.sqlite3 is intentionally tracked - GitHub Actions commits
-# daily updates to it. If it grows unwieldy, swap for a small hosted DB instead.
+# data/weathercontest.sqlite3 outgrew GitHub's 100MB per-file limit for regular git
+# (and git doesn't diff SQLite's binary format well, so every commit bloated the repo
+# further). It now lives as the "db-snapshot" GitHub Release asset instead, downloaded/
+# re-uploaded by collect.yml each run - see that workflow for details.
+data/weathercontest.sqlite3
