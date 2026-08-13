@@ -447,7 +447,12 @@ def render_city_page(
         tags_here = specialization if var == "temperature_2m" else {}
         body.append(_variable_table(var_metrics, sources, tags_here, is_precip=(var == "precipitation"), variable=var, cell_links=cell_links, overall_links=overall_links, overall_metrics=overall_metrics))
     body.append(_glossary_html(sources))
-    if any(s in EXPERIMENTAL_SOURCES for s in sources):
+    # Gated on collection_log_html (did we ever attempt a collection?), not on `sources`
+    # (did it ever produce a scored pair?) - a freshly-added scraped source can have
+    # successful collection runs for a while before its first forecast valid_time is even
+    # in the past, let alone matched against an observation. The log needs to be visible
+    # during exactly that gap, or it can't answer "is it working?" when that's most in doubt.
+    if collection_log_html:
         body.append('<p class="experimental-toggle-wrap"><button id="toggle-experimental" type="button" class="experimental-toggle"></button></p>')
         body.append(collection_log_html)
     return _page(
