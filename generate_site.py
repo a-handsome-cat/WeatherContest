@@ -50,7 +50,10 @@ SOURCE_LABELS: dict[str, tuple[str, str]] = {
     "weatherapi": ("WeatherAPI.com", "Ещё один готовый погодный сервис для приложений."),
     "tomorrow_io": ("Tomorrow.io", "Использует свою сеть радаров и датчиков, а не только публичные метеомодели."),
     "weatherkit": ("Apple Погода", "То самое приложение «Погода» на iPhone — источник самой идеи этого проекта."),
+    "yandex": ("Яндекс.Погода", "Тестовый источник: у Яндекса нет открытого API, поэтому прогноз на 10 дней (утро/день/вечер/ночь) вытаскивается из текста для скринридеров на их странице — это может сломаться при любом их редизайне. Пока скрыт из таблиц по умолчанию — включается кнопкой внизу страницы, там же лог, успешно ли идёт сбор. Время суток переведено в конкретные часы (9/15/21/3) по соглашению, а не по данным самого Яндекса — приближение, но не случайное: проверено сверкой с почасовыми прогнозами других источников на те же дни, и подобрано так, чтобы попадать в часы, по которым вообще есть метеонаблюдения в Архангельске (там станция репортит раз в 3 часа, а не каждый час, как в Нови-Саде)."),
 }
+
+EXPERIMENTAL_SOURCES = {"yandex"}
 
 GUIDE_HTML = """
 <details class="guide">
@@ -155,6 +158,24 @@ function cellValue(cell) {
   if (m) return parseFloat(m[0]);
   return text;
 }
+"""
+
+EXPERIMENTAL_TOGGLE_JS = r"""
+(function () {
+  var btn = document.getElementById('toggle-experimental');
+  if (!btn) return;
+  var on = localStorage.getItem('show-experimental') === '1';
+  function apply() {
+    document.body.classList.toggle('show-experimental', on);
+    btn.textContent = on ? 'скрыть тестовые источники (Яндекс)' : 'показать тестовые источники (Яндекс)';
+  }
+  apply();
+  btn.addEventListener('click', function () {
+    on = !on;
+    localStorage.setItem('show-experimental', on ? '1' : '0');
+    apply();
+  });
+})();
 """
 
 
@@ -347,7 +368,8 @@ def _variable_table(
         overall = _linkify(_overall_value(overall_metrics, variable, source, is_precip), overall_links.get((variable, source)))
         tag = specialization.get(source)
         tag_html = f'<span class="tag">{html.escape(tag)}</span>' if tag else ""
-        rows.append(f"<tr><td>{html.escape(_source_label(source))}{tag_html}</td><td>{overall}</td>{''.join(cells)}</tr>")
+        row_cls = ' class="experimental"' if source in EXPERIMENTAL_SOURCES else ""
+        rows.append(f"<tr{row_cls}><td>{html.escape(_source_label(source))}{tag_html}</td><td>{overall}</td>{''.join(cells)}</tr>")
     header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
     return f'<div class="table-wrap"><table><thead><tr><th>Источник</th><th>Общий</th>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
@@ -371,6 +393,35 @@ def _glossary_html(sources: list[str]) -> str:
     return f'<h2>Источники на этой странице</h2><ul class="glossary">{"".join(items)}</ul>'
 
 
+def _collection_log_html(conn, city_id: str) -> str:
+    """Recent success/failure history for scraped (experimental) sources, so it's
+    visible whether collection is actually working rather than silently going quiet.
+    Hidden behind the same toggle as the experimental table rows."""
+    sections = []
+    for source in sorted(EXPERIMENTAL_SOURCES):
+        rows = db.recent_collection_log(conn, source, city_id)
+        if not rows:
+            continue
+        items = []
+        for fetched_at, status, detail in rows:
+            cls = "log-ok" if status == "ok" else "log-error"
+            status_label = "успешно" if status == "ok" else "ошибка"
+            detail_txt = f": {html.escape(detail)}" if detail else ""
+            items.append(f'<li class="{cls}">{html.escape(fetched_at)} — {status_label}{detail_txt}</li>')
+        label = _source_label(source)
+        sections.append(f"<h3>Лог сбора: {html.escape(label)}</h3><ul class='log'>{''.join(items)}</ul>")
+    if not sections:
+        return ""
+    return (
+        '<div class="experimental-panel">'
+        '<p class="meta">Последние попытки забора данных тестовых источников для этого города. '
+        "Это веб-скрейпинг, а не официальный API — он может сломаться при любом редизайне их сайта, "
+        "поэтому здесь видно, идёт ли сбор успешно, а не только итоговые цифры в таблицах.</p>"
+        f"{''.join(sections)}"
+        "</div>"
+    )
+
+
 def render_city_page(
     city_id: str,
     display_name: str,
@@ -379,6 +430,7 @@ def render_city_page(
     cell_links: dict,
     overall_links: dict,
     overall_metrics: dict,
+    collection_log_html: str = "",
 ) -> str:
     specialization = verify.classify_specialization(metrics)
     sources = _all_sources(metrics)
@@ -395,6 +447,9 @@ def render_city_page(
         tags_here = specialization if var == "temperature_2m" else {}
         body.append(_variable_table(var_metrics, sources, tags_here, is_precip=(var == "precipitation"), variable=var, cell_links=cell_links, overall_links=overall_links, overall_metrics=overall_metrics))
     body.append(_glossary_html(sources))
+    if any(s in EXPERIMENTAL_SOURCES for s in sources):
+        body.append('<p class="experimental-toggle-wrap"><button id="toggle-experimental" type="button" class="experimental-toggle"></button></p>')
+        body.append(collection_log_html)
     return _page(
         title=f"Точность прогноза погоды — {display_name}",
         subtitle=f"Сравнение источников прогноза погоды в городе {display_name} с фактическими данными метеостанции.",
@@ -461,7 +516,8 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
                 overall_html = f'<span class="{overall_conf}" title="{html.escape(overall_title)}">{overall_avg:+.2f}</span>'
             else:
                 overall_html = "—"
-            rows.append(f"<tr><td>{html.escape(_source_label(source))}</td><td>{overall_html}</td>{''.join(cells)}</tr>")
+            row_cls = ' class="experimental"' if source in EXPERIMENTAL_SOURCES else ""
+            rows.append(f"<tr{row_cls}><td>{html.escape(_source_label(source))}</td><td>{overall_html}</td>{''.join(cells)}</tr>")
         header = "".join(f"<th>{b}</th>" for b in BUCKET_ORDER)
         body.append(f'<div class="table-wrap"><table><thead><tr><th>Источник</th><th>Общий</th>{header}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
@@ -469,6 +525,8 @@ def render_combined_page(all_metrics: dict[str, dict], generated_at: str) -> str
         body.append('<p class="empty">Пока недостаточно данных ни по одному городу для сводной таблицы.</p>')
     body.append('<p class="meta">Здесь показано среднее skill-score по обоим городам, где для источника уже есть данные — то есть насколько он в среднем лучше «как сейчас, так и будет», а не рейтинг самих городов. Осадки в сводную таблицу не включены — усреднять CSI по городам с разным климатом некорректно, смотрите их отдельно на страницах городов. Числа здесь не кликабельны для скачивания — это среднее по средним (по городам, а внутри — пока ещё и по периодам), а не отдельный расчёт по объединённому пулу пар, как теперь колонка «Общий» на страницах городов. Смешивать сырые пары двух климатически разных городов в один пул — отдельный вопрос, который здесь пока сознательно не решён; исходные пары и честный «Общий» по каждому городу отдельно смотрите на страницах городов.</p>')
     body.append(_glossary_html(sorted(all_sources_seen)))
+    if all_sources_seen & EXPERIMENTAL_SOURCES:
+        body.append('<p class="experimental-toggle-wrap"><button id="toggle-experimental" type="button" class="experimental-toggle"></button></p>')
 
     return _page(
         title="Рейтинг источников прогноза погоды",
@@ -504,6 +562,7 @@ def _page(title: str, subtitle: str, body_parts: list[str], generated_at: str, a
 <p class="meta">Обновлено: {generated_at} UTC.</p>
 {''.join(body_parts)}
 <script>{SORT_JS}</script>
+<script>{EXPERIMENTAL_TOGGLE_JS}</script>
 </body>
 </html>"""
 
@@ -547,6 +606,20 @@ td a:hover { border-bottom-style: solid; }
 
 .glossary { padding-left: 1.2rem; }
 .glossary li { margin-bottom: .3rem; }
+
+tr.experimental { display: none; }
+body.show-experimental tr.experimental { display: table-row; }
+
+.experimental-toggle-wrap { margin: 2rem 0 0; }
+.experimental-toggle { font-size: .78rem; opacity: .55; background: none; border: 1px solid rgba(128,128,128,.35); border-radius: 6px; padding: .3rem .7rem; cursor: pointer; color: inherit; }
+.experimental-toggle:hover { opacity: .85; }
+
+.experimental-panel { display: none; margin-top: 1rem; font-size: .85rem; }
+body.show-experimental .experimental-panel { display: block; }
+.experimental-panel h3 { font-size: .95rem; margin: 1.2rem 0 .4rem; }
+.log { list-style: none; padding: 0; opacity: .85; }
+.log li { padding: .15rem 0; border-bottom: 1px dotted rgba(128,128,128,.25); }
+.log-error { color: #e74c3c; font-weight: 600; }
 """
 
 
@@ -564,7 +637,8 @@ def main() -> None:
         pairs_grouped = verify.pairs_by_cell(conn, city_id)
         overall_metrics = _compute_pooled_overall(pairs_grouped)
         cell_links, overall_links = _write_cell_exports(site_dir, city_id, city["display_name"], metrics, pairs_grouped, overall_metrics)
-        page = render_city_page(city_id, city["display_name"], metrics, generated_at, cell_links, overall_links, overall_metrics)
+        collection_log_html = _collection_log_html(conn, city_id)
+        page = render_city_page(city_id, city["display_name"], metrics, generated_at, cell_links, overall_links, overall_metrics, collection_log_html)
         (site_dir / f"city_{city_id}.html").write_text(page, encoding="utf-8")
         print(f"wrote city_{city_id}.html (+{len(cell_links)} cell CSVs, {len(overall_links)} overall CSVs)")
 

@@ -7,12 +7,14 @@ CITIES = {
         "lat": 45.2671,
         "lon": 19.8335,
         "synop_block": "13274",  # Novi Sad / Rimski Sancevi
+        "timezone": "Europe/Belgrade",  # IANA tz - needed to localize Yandex's day-part text (see collectors/yandex.py)
     },
     "arkhangelsk": {
         "display_name": "Архангельск",
         "lat": 64.5401,
         "lon": 40.5433,
         "synop_block": "22550",  # Talagi, ~64.50N 40.73E, right by the city
+        "timezone": "Europe/Moscow",  # Arkhangelsk shares the MSK zone (UTC+3, no DST) - no separate IANA zone exists
     },
 }
 

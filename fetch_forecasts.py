@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 import config
 import db
-from collectors import metno, open_meteo, openweathermap, tomorrow_io, weatherapi, weatherkit
+from collectors import metno, open_meteo, openweathermap, tomorrow_io, weatherapi, weatherkit, yandex
 
 KEYED_SOURCES = [
     ("openweathermap", openweathermap.fetch, "OPENWEATHERMAP_API_KEY"),
@@ -92,6 +92,19 @@ def main() -> None:
                 print(f"weatherkit: {len(points)} points")
             except Exception as e:
                 print(f"[error] weatherkit fetch failed for {city_id}: {e}")
+
+        # Experimental / test-mode: scraped, so it's expected to break on Yandex's own
+        # deploys sometimes. Logged to collection_log either way so that's visible on
+        # the site (behind the hidden toggle) instead of just disappearing from CI logs.
+        try:
+            yandex_points = yandex.fetch(city["lat"], city["lon"], city["timezone"])
+            run_id = db.insert_forecast_run(conn, city_id, "yandex", fetched_at)
+            db.insert_forecast_points(conn, run_id, yandex_points)
+            db.insert_collection_log(conn, "yandex", city_id, fetched_at, "ok", f"{len(yandex_points)} points")
+            print(f"yandex: {len(yandex_points)} points")
+        except Exception as e:
+            db.insert_collection_log(conn, "yandex", city_id, fetched_at, "error", str(e)[:300])
+            print(f"[error] yandex fetch failed for {city_id}: {e}")
 
         conn.commit()  # per city, so one city's failure can't roll back another city's successful fetches
 

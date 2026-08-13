@@ -41,6 +41,21 @@ CREATE TABLE IF NOT EXISTS observations (
 
 CREATE INDEX IF NOT EXISTS idx_observations_lookup
     ON observations(city, variable, obs_time);
+
+-- Per-attempt success/failure record for fragile (scraped) sources, so a broken
+-- collector shows up as a visible trend instead of silently going quiet. Not used
+-- by the stable API-backed sources - see fetch_forecasts.py.
+CREATE TABLE IF NOT EXISTS collection_log (
+    id INTEGER PRIMARY KEY,
+    source TEXT NOT NULL,
+    city TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,      -- UTC ISO8601, same run-id timestamp as forecast_runs.fetched_at
+    status TEXT NOT NULL,          -- 'ok' | 'error'
+    detail TEXT                    -- point count on success, short error message on failure
+);
+
+CREATE INDEX IF NOT EXISTS idx_collection_log_lookup
+    ON collection_log(source, city, fetched_at);
 """
 
 
@@ -78,3 +93,17 @@ def insert_observations(conn: sqlite3.Connection, city: str, station: str, point
            VALUES (?, ?, ?, ?, ?, ?)""",
         [(city, station, obs_time, variable, period_hours, value) for obs_time, variable, period_hours, value in points],
     )
+
+
+def insert_collection_log(conn: sqlite3.Connection, source: str, city: str, fetched_at: str, status: str, detail: str) -> None:
+    conn.execute(
+        "INSERT INTO collection_log (source, city, fetched_at, status, detail) VALUES (?, ?, ?, ?, ?)",
+        (source, city, fetched_at, status, detail),
+    )
+
+
+def recent_collection_log(conn: sqlite3.Connection, source: str, city: str, limit: int = 12) -> list[tuple[str, str, str]]:
+    return conn.execute(
+        "SELECT fetched_at, status, detail FROM collection_log WHERE source = ? AND city = ? ORDER BY fetched_at DESC LIMIT ?",
+        (source, city, limit),
+    ).fetchall()
