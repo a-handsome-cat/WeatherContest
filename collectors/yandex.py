@@ -19,10 +19,14 @@ Two deliberate approximations, done openly rather than silently:
   confirmed against real sunrise/sunset times in the same text block (matched
   Novi Sad's actual solar geometry to within ~5 minutes), not assumed.
 
-As before, skips precipitation/cloud cover/wind direction entirely - Yandex's text
-gives condition words ("ясно", "малооблачно") and compass words ("северный"), not
-numeric mm/%/degrees, and inventing a mapping would be fabricating data, not
-scraping it.
+Cloud cover and precipitation come from the same condition word ("ясно", "малооблачно",
+"небольшой дождь", ...) via a fixed lookup table below, not from a numeric field Yandex
+gives us - a deliberate, documented approximation (this project is about picking a
+decent weather app for a weekend, not a peer-reviewed model comparison; a coarse but
+honest estimate beats leaving the row empty). Precipitation in particular is occurrence-
+only: the mm value is just "clearly above/below the 0.2mm threshold" for POD/FAR/CSI,
+not a real accumulation estimate, so don't read the MAE/bias next to it as meaningful.
+Wind direction is still skipped - out of scope for the whole project (see verify.py).
 """
 from __future__ import annotations
 
@@ -50,6 +54,31 @@ _PERIODS = [("утром", 9, 0), ("днём", 15, 0), ("вечером", 21, 0)
 
 _TEMP_RE = re.compile(r"([+\-]?\d+)°")
 _WIND_RE = re.compile(r"скорость ветра ([\d,]+)\s*м/с")
+_WIND_MARKER = "скорость ветра"
+
+_PRECIP_RE = re.compile(r"дожд|снег|ливень|морось|гроза|осадк")
+_LIGHT_RE = re.compile(r"небольш|слаб")
+
+# checked in order - more specific phrases first, since "облачно" is a substring of
+# "облачно с прояснениями" too. Values are rough midpoints of each category, not
+# measurements - see module docstring.
+_CLOUD_MAP = [
+    ("ясно", 5),
+    ("малооблачно", 25),
+    ("переменная облачность", 55),
+    ("облачно с прояснениями", 55),
+    ("пасмурно", 95),
+    ("облачно", 80),
+]
+
+
+def _condition_phrase(segment: str) -> str:
+    """The free-text condition ("ясно", "небольшой дождь", ...) sits between the
+    last temperature reading and "скорость ветра" in each period segment."""
+    wind_idx = segment.find(_WIND_MARKER)
+    head = segment[:wind_idx] if wind_idx != -1 else segment
+    last_deg = head.rfind("°")
+    return head[last_deg + 1:].strip(" ,") if last_deg != -1 else ""
 
 
 def _extract_string_literal(text: str, start_quote_idx: int) -> tuple[str | None, int]:
@@ -140,6 +169,19 @@ def _parse_day_block(text: str, block_date, tz: ZoneInfo) -> list[tuple[str, str
             wind_match = _WIND_RE.search(segment)
             if wind_match:
                 points.append((valid_time, "wind_speed_10m", 1, float(wind_match.group(1).replace(",", "."))))
+
+            condition = _condition_phrase(segment)
+            if _PRECIP_RE.search(condition):
+                # occurrence-only, see module docstring - just needs to clearly clear
+                # the 0.2mm POD/FAR/CSI threshold, not approximate a real accumulation
+                precip_mm = 0.5 if _LIGHT_RE.search(condition) else 2.0
+                points.append((valid_time, "precipitation", 1, precip_mm))
+                points.append((valid_time, "cloud_cover", 1, 95.0))  # rain implies ~overcast
+            else:
+                for phrase, cloud_pct in _CLOUD_MAP:
+                    if phrase in condition:
+                        points.append((valid_time, "cloud_cover", 1, float(cloud_pct)))
+                        break
             break
     return points
 
