@@ -1,6 +1,6 @@
 # Нови-Сад / Осадки / 0-6ч / ECMWF AIFS
-# n=26, порог дождя = 0.2 мм
-# POD=None, FAR=1.0, CSI=0.0, MAE=0.023 мм, bias=+0.023 мм
+# n=27, порог дождя = 0.2 мм
+# POD=None, FAR=1.0, CSI=0.0, MAE=0.022 мм, bias=+0.022 мм
 # CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
 #
 fetched_at,valid_time,lead_hours,forecast,observed,error
@@ -30,3 +30,4 @@ fetched_at,valid_time,lead_hours,forecast,observed,error
 2026-08-15T16:20:39Z,2026-08-15T18:00:00Z,1.7,0.0,0.0,0.0
 2026-08-16T16:21:00Z,2026-08-16T18:00:00Z,1.6,0.0,0.0,0.0
 2026-08-17T10:18:11Z,2026-08-17T12:00:00Z,1.7,0.0,0.0,0.0
+2026-08-17T16:23:45Z,2026-08-17T18:00:00Z,1.6,0.0,0.0,0.0
