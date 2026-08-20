@@ -1,6 +1,6 @@
 # Нови-Сад / Осадки / 0-6ч / JMA (Япония)
-# n=30, порог дождя = 0.2 мм
-# POD=None, FAR=None, CSI=None, MAE=0.007 мм, bias=-0.007 мм
+# n=31, порог дождя = 0.2 мм
+# POD=None, FAR=None, CSI=None, MAE=0.006 мм, bias=-0.006 мм
 # CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
 #
 fetched_at,valid_time,lead_hours,forecast,observed,error
@@ -34,3 +34,4 @@ fetched_at,valid_time,lead_hours,forecast,observed,error
 2026-08-18T10:14:55Z,2026-08-18T12:00:00Z,1.8,0.0,0.1,-0.1
 2026-08-18T16:27:50Z,2026-08-18T18:00:00Z,1.5,0.0,0.1,-0.1
 2026-08-19T10:14:48Z,2026-08-19T12:00:00Z,1.8,0.0,0.0,0.0
+2026-08-19T16:28:17Z,2026-08-19T18:00:00Z,1.5,0.0,0.0,0.0
