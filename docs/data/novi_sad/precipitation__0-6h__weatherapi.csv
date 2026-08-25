@@ -1,6 +1,6 @@
 # Нови-Сад / Осадки / 0-6ч / WeatherAPI.com
-# n=37, порог дождя = 0.2 мм
-# POD=None, FAR=1.0, CSI=0.0, MAE=0.074 мм, bias=+0.063 мм
+# n=38, порог дождя = 0.2 мм
+# POD=None, FAR=1.0, CSI=0.0, MAE=0.073 мм, bias=+0.062 мм
 # CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
 #
 fetched_at,valid_time,lead_hours,forecast,observed,error
@@ -41,3 +41,4 @@ fetched_at,valid_time,lead_hours,forecast,observed,error
 2026-08-23T10:10:14Z,2026-08-23T12:00:00Z,1.8,0.0,0.0,0.0
 2026-08-23T16:21:17Z,2026-08-23T18:00:00Z,1.6,0.0,0.0,0.0
 2026-08-24T16:34:00Z,2026-08-24T18:00:00Z,1.4,0.0,0.0,0.0
+2026-08-25T10:18:20Z,2026-08-25T12:00:00Z,1.7,0.02,0.0,0.02
