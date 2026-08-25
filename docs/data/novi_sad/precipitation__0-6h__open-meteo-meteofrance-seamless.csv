@@ -1,6 +1,6 @@
 # Нови-Сад / Осадки / 0-6ч / ARPEGE (Франция)
-# n=41, порог дождя = 0.2 мм
-# POD=None, FAR=None, CSI=None, MAE=0.005 мм, bias=-0.005 мм
+# n=42, порог дождя = 0.2 мм
+# POD=None, FAR=None, CSI=None, MAE=0.007 мм, bias=-0.002 мм
 # CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
 #
 fetched_at,valid_time,lead_hours,forecast,observed,error
@@ -45,3 +45,4 @@ fetched_at,valid_time,lead_hours,forecast,observed,error
 2026-08-23T16:21:17Z,2026-08-23T18:00:00Z,1.6,0.0,0.0,0.0
 2026-08-24T16:34:00Z,2026-08-24T18:00:00Z,1.4,0.0,0.0,0.0
 2026-08-25T10:18:20Z,2026-08-25T12:00:00Z,1.7,0.0,0.0,0.0
+2026-08-25T16:33:53Z,2026-08-25T18:00:00Z,1.4,0.1,0.0,0.1
