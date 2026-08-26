@@ -1,6 +1,6 @@
 # Нови-Сад / Осадки / 0-6ч / UKMO (Британия)
-# n=42, порог дождя = 0.2 мм
-# POD=None, FAR=1.0, CSI=0.0, MAE=0.060 мм, bias=+0.055 мм
+# n=43, порог дождя = 0.2 мм
+# POD=None, FAR=1.0, CSI=0.0, MAE=0.067 мм, bias=+0.063 мм
 # CSI = hits / (hits + misses + false_alarms); hit = прогноз>=порога И факт>=порога
 #
 fetched_at,valid_time,lead_hours,forecast,observed,error
@@ -46,3 +46,4 @@ fetched_at,valid_time,lead_hours,forecast,observed,error
 2026-08-24T16:34:00Z,2026-08-24T18:00:00Z,1.4,0.0,0.0,0.0
 2026-08-25T10:18:20Z,2026-08-25T12:00:00Z,1.7,0.0,0.0,0.0
 2026-08-25T16:33:53Z,2026-08-25T18:00:00Z,1.4,0.3,0.0,0.3
+2026-08-26T10:21:58Z,2026-08-26T12:00:00Z,1.6,0.4,0.0,0.4
